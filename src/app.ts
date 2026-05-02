@@ -43,9 +43,12 @@ app.use(helmet.frameguard({ action: 'deny' }));
 app.use(helmet.hsts({ maxAge: 31536000, includeSubDomains: true, preload: true }));
 
 // CORS
-const allowedOrigins = env.nodeEnv === 'production'
-  ? ['https://dalpay.gov.so', 'https://admin.dalpay.gov.so']
-  : ['http://localhost:5173', 'http://localhost:3000'];
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://dalpay-portal.vercel.app',
+  'https://dalpay.onrender.com'
+];
 
 app.use(
   cors({
