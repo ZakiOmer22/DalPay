@@ -40,9 +40,12 @@ app.use(helmet_1.default.referrerPolicy({ policy: 'strict-origin-when-cross-orig
 app.use(helmet_1.default.frameguard({ action: 'deny' }));
 app.use(helmet_1.default.hsts({ maxAge: 31536000, includeSubDomains: true, preload: true }));
 // CORS
-const allowedOrigins = env_1.env.nodeEnv === 'production'
-    ? ['https://dalpay.gov.so', 'https://admin.dalpay.gov.so']
-    : ['http://localhost:5173', 'http://localhost:3000'];
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://dalpay-portal.vercel.app',
+    'https://dalpay.onrender.com'
+];
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
         if (!origin || allowedOrigins.includes(origin)) {
