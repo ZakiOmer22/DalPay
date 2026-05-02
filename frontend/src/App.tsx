@@ -19,7 +19,6 @@ import TaxTypeIncomePage from "./pages/TaxTypeIncomePage";
 import TaxTypeBusinessPage from "./pages/TaxTypeBusinessPage";
 import TaxTypePropertyPage from "./pages/TaxTypePropertyPage";
 import TaxTypeConsumptionPage from "./pages/TaxTypeConsumptionPage";
-import HowToPayPage from "./pages/HowToPayPage";
 import FaqPage from "./pages/FaqPage";
 import TaxRatesPage from "./pages/TaxRatesPage";
 import DownloadFormsPage from "./pages/DownloadFormsPage";

@@ -1,5 +1,5 @@
 // web/src/pages/LoginPage.tsx
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ShieldCheck,
@@ -15,8 +15,6 @@ import {
   Zap,
   Globe,
   Sparkles,
-  Sun,
-  Moon,
 } from "lucide-react";
 import { authApi, setTokens } from "@/services/api";
 
@@ -31,23 +29,23 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loginMethod, setLoginMethod] = useState<"phone" | "email">("email");
 
-  const [dark, setDark] = useState(() => {
-    return localStorage.getItem("dalpay-theme") === "dark";
-  });
+  // const [dark, setDark] = useState(() => {
+  //   return localStorage.getItem("dalpay-theme") === "dark";
+  // });
 
-  useEffect(() => {
-    if (dark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [dark]);
+  // useEffect(() => {
+  //   if (dark) {
+  //     document.documentElement.classList.add("dark");
+  //   } else {
+  //     document.documentElement.classList.remove("dark");
+  //   }
+  // }, [dark]);
 
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    localStorage.setItem("dalpay-theme", next ? "dark" : "light");
-  };
+  // const toggleTheme = () => {
+  //   const next = !dark;
+  //   setDark(next);
+  //   localStorage.setItem("dalpay-theme", next ? "dark" : "light");
+  // };
 
   const [successMessage, setSuccessMessage] = useState(
     searchParams.get("registered") === "true"

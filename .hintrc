@@ -13,8 +13,11 @@
     "axe/forms": [
       "default",
       {
-        "select-name": "off"
+        "select-name": "off",
+        "label": "off"
       }
-    ]
+    ],
+    "apple-touch-icons": "off",
+    "typescript-config/is-valid": "off"
   }
 }

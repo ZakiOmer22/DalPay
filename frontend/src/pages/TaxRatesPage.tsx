@@ -118,26 +118,26 @@ function MapSearch({ onSelect }: { onSelect: (city: CityTax) => void }) {
   );
 }
 
-function LocateButton({ onLocated }: { onLocated: (pos: [number, number]) => void }) {
-  const map = useMap();
+// function LocateButton({ onLocated }: { onLocated: (pos: [number, number]) => void }) {
+//   const map = useMap();
 
-  const handleLocate = () => {
-    map.locate().on("locationfound", (e) => {
-      map.flyTo(e.latlng, 14);
-      onLocated([e.latlng.lat, e.latlng.lng]);
-    });
-  };
+//   const handleLocate = () => {
+//     map.locate().on("locationfound", (e) => {
+//       map.flyTo(e.latlng, 14);
+//       onLocated([e.latlng.lat, e.latlng.lng]);
+//     });
+//   };
 
-  return (
-    <button
-      onClick={handleLocate}
-      className="absolute top-3 right-3 z-[1000] p-2 bg-white dark:bg-[#111627] border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-      title="Locate me"
-    >
-      <Crosshair size={18} />
-    </button>
-  );
-}
+//   return (
+//     <button
+//       onClick={handleLocate}
+//       className="absolute top-3 right-3 z-[1000] p-2 bg-white dark:bg-[#111627] border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+//       title="Locate me"
+//     >
+//       <Crosshair size={18} />
+//     </button>
+//   );
+// }
 
 /* ─────────────────────────────────────────────
    Separate Table Section component
@@ -297,12 +297,12 @@ function TaxMap({
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             <MapSearch onSelect={onSelectCity} />
-            <LocateButton onLocated={(pos) => {
+            {/* <LocateButton onLocated={(pos) => {
               // find nearest city to located position (simplified: just fly)
               const map = useMap(); // can't call useMap here, need a child component
               // We'll just set the selectedCity to null (user location not in our list)
               onSelectCity(null);
-            }} />
+            }} /> */}
 
             {/* Actually we need a wrapper for LocateButton because useMap must be inside MapContainer */}
             {/* We'll put LocateButton inside a child component that uses useMap */}
