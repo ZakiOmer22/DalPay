@@ -17,7 +17,6 @@ import {
     Eye,
     EyeOff,
     MapPin,
-    CreditCard,
     Car,
     Home,
     FileText,

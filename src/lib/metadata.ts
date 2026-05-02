@@ -1,12 +1,3 @@
-import "./globals.css";
-import { Providers } from "@/components/shared/Providers";
-import { Toaster } from "react-hot-toast";
-
-/**
- * Metadata (kept as plain object for reuse later)
- * NOTE: Vite ignores this, but we keep it for your system design
- */
-// eslint-disable-next-line react-refresh/only-export-components
 export const metadata = {
   title: {
     default: "DalPay — Digital Tax Payment System | Ministry of Finance",
@@ -55,43 +46,5 @@ export const metadata = {
     images: ["/og-image.png"],
   },
   robots: { index: true, follow: true },
-  metadataBase: "https://dalpay.gov.so",
+  metadataBase: new URL("https://dalpay.gov.so"),
 };
-
-/**
- * Toast config (unchanged)
- */
-const toastOptions = {
-  style: {
-    background: "#0a1628",
-    color: "#f5f5f0",
-    border: "1px solid #1e3a5f",
-    borderRadius: "8px",
-    fontFamily: "DM Sans, sans-serif",
-  },
-  success: {
-    iconTheme: { primary: "#16a34a", secondary: "#0a1628" },
-  },
-  error: {
-    iconTheme: { primary: "#ef4444", secondary: "#0a1628" },
-  },
-} as const;
-
-/**
- * Root layout for Vite (NOT Next.js)
- */
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="min-h-screen bg-[#0a1628] text-[#e2e8f0] antialiased">
-      <Providers>
-        {children}
-
-        <Toaster position="top-right" toastOptions={toastOptions} />
-      </Providers>
-    </div>
-  );
-}
