@@ -1,0 +1,128 @@
+﻿[
+    {
+        "endpoint":  "/health",
+        "timestamp":  "2026-04-29T17:28:56.1146051+03:00",
+        "details":  "OK",
+        "status":  "PASS",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/auth/register",
+        "timestamp":  "2026-04-29T17:28:58.2814900+03:00",
+        "details":  "SL-TEST-20260429172856",
+        "status":  "PASS",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/auth/login",
+        "timestamp":  "2026-04-29T17:28:58.8727134+03:00",
+        "details":  "No admin",
+        "status":  "SKIP",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/tax/assessment-types",
+        "timestamp":  "2026-04-29T17:28:59.0521388+03:00",
+        "details":  4,
+        "status":  "PASS",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/payment/providers",
+        "timestamp":  "2026-04-29T17:28:59.2303000+03:00",
+        "details":  4,
+        "status":  "PASS",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/tax/assessments",
+        "timestamp":  "2026-04-29T17:28:59.2323098+03:00",
+        "details":  "No admin",
+        "status":  "SKIP",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/tax/assessments",
+        "timestamp":  "2026-04-29T17:28:59.4110332+03:00",
+        "details":  0,
+        "status":  "PASS",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/tax/assessments/:id",
+        "timestamp":  "2026-04-29T17:28:59.4120321+03:00",
+        "details":  "No assessment",
+        "status":  "SKIP",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/tax/summary",
+        "timestamp":  "2026-04-29T17:29:00.6085700+03:00",
+        "details":  "0",
+        "status":  "PASS",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/payment/initiate",
+        "timestamp":  "2026-04-29T17:29:00.6095704+03:00",
+        "details":  "No data",
+        "status":  "SKIP",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/payment/status/:id",
+        "timestamp":  "2026-04-29T17:29:00.6115705+03:00",
+        "details":  "No payment",
+        "status":  "SKIP",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/payment/confirm",
+        "timestamp":  "2026-04-29T17:29:00.6125694+03:00",
+        "details":  "No payment",
+        "status":  "SKIP",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/payment/history",
+        "timestamp":  "2026-04-29T17:29:00.7920411+03:00",
+        "details":  0,
+        "status":  "PASS",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/reconciliation/run",
+        "timestamp":  "2026-04-29T17:29:00.7932311+03:00",
+        "details":  "No admin",
+        "status":  "SKIP",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/reconciliation/report/:date",
+        "timestamp":  "2026-04-29T17:29:00.7952295+03:00",
+        "details":  "No admin",
+        "status":  "SKIP",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/reconciliation/summary",
+        "timestamp":  "2026-04-29T17:29:00.7962342+03:00",
+        "details":  "No admin",
+        "status":  "SKIP",
+        "method":  "GET"
+    },
+    {
+        "endpoint":  "/auth/refresh-token",
+        "timestamp":  "2026-04-29T17:29:01.2078148+03:00",
+        "details":  "OK",
+        "status":  "PASS",
+        "method":  "POST"
+    },
+    {
+        "endpoint":  "/auth/logout",
+        "timestamp":  "2026-04-29T17:29:01.7370682+03:00",
+        "details":  "OK",
+        "status":  "PASS",
+        "method":  "POST"
+    }
+]
