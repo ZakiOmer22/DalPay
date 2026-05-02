@@ -1,0 +1,61 @@
+{
+  "name": "dalpay-server",
+  "version": "1.0.0",
+  "description": "DalPay Digital Tax Payment System - Backend API",
+  "main": "dist/app.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "migrate": "knex migrate:latest --knexfile knexfile.ts",
+    "migrate:rollback": "knex migrate:rollback --knexfile knexfile.ts",
+    "migrate:make": "knex migrate:make --knexfile knexfile.ts"
+  },
+  "keywords": [
+    "dalpay",
+    "tax",
+    "payment",
+    "mobile-money",
+    "somaliland"
+  ],
+  "author": "Zacki Abdulkadir Omer",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-pg-simple": "^10.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-rate-limit": "^8.4.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.1.0",
+    "hpp": "^0.2.3",
+    "jsonwebtoken": "^9.0.3",
+    "knex": "^3.2.9",
+    "morgan": "^1.10.1",
+    "pg": "^8.20.0",
+    "redis": "^5.12.1",
+    "stripe": "^22.1.0",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/express-rate-limit": "^5.1.3",
+    "@types/express-session": "^1.19.0",
+    "@types/hpp": "^0.2.7",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "@types/uuid": "^10.0.0",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
