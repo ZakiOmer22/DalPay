@@ -46,12 +46,15 @@ export declare class AuthService {
             nationalId: any;
         };
     }>;
-    refreshToken(refreshToken: string): Promise<{
+    refreshToken(refreshToken: string, ipAddress?: string, userAgent?: string): Promise<{
         accessToken: string;
         refreshToken: string;
     }>;
     logout(userId: string, accessToken: string): Promise<void>;
     private generateTokens;
-    private storeRefreshToken;
+    private storeRefreshTokenSession;
+    listSessions(userId: string): Promise<any[]>;
+    revokeSession(userId: string, sessionId: string): Promise<void>;
+    revokeAllSessions(userId: string): Promise<void>;
 }
 //# sourceMappingURL=auth.service.d.ts.map

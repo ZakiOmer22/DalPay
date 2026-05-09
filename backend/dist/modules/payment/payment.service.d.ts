@@ -1,4 +1,5 @@
 export declare class PaymentService {
+    private fraudService;
     initiatePayment(data: {
         userId: string;
         assessmentId: string;

@@ -5,11 +5,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const auth_service_1 = require("./auth.service");
+const otp_service_1 = require("./otp.service");
 const response_1 = require("../../utils/response");
 const stripe_1 = __importDefault(require("stripe"));
 const errors_1 = require("../../utils/errors");
+const database_1 = __importDefault(require("../../config/database"));
 const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY || "");
 const authService = new auth_service_1.AuthService();
+const otpService = new otp_service_1.OtpService();
 class AuthController {
     async register(req, res, next) {
         try {
@@ -61,7 +64,7 @@ class AuthController {
     async refreshToken(req, res, next) {
         try {
             const { refreshToken } = req.body;
-            const tokens = await authService.refreshToken(refreshToken);
+            const tokens = await authService.refreshToken(refreshToken, req.ip, req.headers["user-agent"]);
             return (0, response_1.successResponse)(res, tokens, "Token refreshed");
         }
         catch (error) {
@@ -80,7 +83,33 @@ class AuthController {
             next(error);
         }
     }
-    // Stripe Identity — create verification session
+    async sendOtp(req, res, next) {
+        try {
+            const userId = req.user.userId;
+            const { type } = req.body;
+            if (!["email", "phone"].includes(type)) {
+                throw new errors_1.AppError("Type must be email or phone", 400);
+            }
+            const result = await otpService.sendOtp(userId, type);
+            return (0, response_1.successResponse)(res, result, "OTP sent");
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async verifyOtp(req, res, next) {
+        try {
+            const userId = req.user.userId;
+            const { code } = req.body;
+            await otpService.verifyOtp(userId, code);
+            // Set the step‑up timestamp after successful verification
+            await database_1.default.query("UPDATE users SET last_sensitive_auth_at = NOW() WHERE id = $1", [userId]);
+            return (0, response_1.successResponse)(res, null, "OTP verified successfully");
+        }
+        catch (error) {
+            next(error);
+        }
+    }
     async createVerificationSession(req, res, next) {
         try {
             const { email, firstName, lastName } = req.body;
@@ -107,7 +136,6 @@ class AuthController {
             next(error);
         }
     }
-    // Stripe Identity — check verification status
     async checkVerificationStatus(req, res, next) {
         try {
             const { sessionId } = req.params;
@@ -116,6 +144,37 @@ class AuthController {
                 status: session.status,
                 verified: session.status === "verified",
             });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async getSessions(req, res, next) {
+        try {
+            const userId = req.user.userId;
+            const sessions = await authService.listSessions(userId);
+            return (0, response_1.successResponse)(res, sessions);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async revokeSession(req, res, next) {
+        try {
+            const userId = req.user.userId;
+            const { sessionId } = req.params;
+            await authService.revokeSession(userId, sessionId);
+            return (0, response_1.successResponse)(res, null, "Session revoked");
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async revokeAllSessions(req, res, next) {
+        try {
+            const userId = req.user.userId;
+            await authService.revokeAllSessions(userId);
+            return (0, response_1.successResponse)(res, null, "All sessions revoked");
         }
         catch (error) {
             next(error);

@@ -7,12 +7,18 @@ exports.TaxService = void 0;
 // server/src/modules/tax/tax.service.ts
 const database_1 = __importDefault(require("../../config/database"));
 const errors_1 = require("../../utils/errors");
+const audit_1 = require("../../utils/audit");
 class TaxService {
     async getAssessments(userId) {
-        const result = await database_1.default.query(`SELECT id, user_id, tax_type, amount, year, due_date, status, auto_generated, created_at
-       FROM tax_assessments
-       WHERE user_id = $1
-       ORDER BY year DESC, created_at DESC`, [userId]);
+        let query = `SELECT id, user_id, tax_type, amount, year, due_date, status, auto_generated, created_at
+                 FROM tax_assessments`;
+        const params = [];
+        if (userId) {
+            query += ' WHERE user_id = $1';
+            params.push(userId);
+        }
+        query += ' ORDER BY year DESC, created_at DESC';
+        const result = await database_1.default.query(query, params);
         return result.rows.map(row => ({
             assessment_id: row.id,
             tax_type: row.tax_type,
@@ -44,8 +50,13 @@ class TaxService {
        VALUES ($1, $2, $3, $4, $5, 'unpaid')
        RETURNING id, user_id, tax_type, amount, year, due_date, status`, [data.userId, data.taxType, data.amount, data.year, data.dueDate]);
         const row = result.rows[0];
-        await database_1.default.query(`INSERT INTO audit_logs (user_id, action, entity, entity_id, metadata)
-       VALUES ($1, $2, $3, $4, $5)`, [data.adminId, 'ASSESSMENT_CREATED', 'tax_assessments', row.id, JSON.stringify({ amount: data.amount })]);
+        await (0, audit_1.insertAuditLog)({
+            userId: data.adminId,
+            action: 'ASSESSMENT_CREATED',
+            entity: 'tax_assessments',
+            entityId: row.id,
+            metadata: { amount: data.amount },
+        });
         return {
             assessment_id: row.id,
             tax_type: row.tax_type,

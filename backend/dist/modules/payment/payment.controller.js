@@ -7,13 +7,17 @@ const paymentService = new payment_service_1.PaymentService();
 class PaymentController {
     async initiatePayment(req, res, next) {
         try {
-            const taxpayerId = req.user.userId;
+            const user = req.user;
+            // Allow admin to specify a target taxpayer for the payment
+            const userId = user.role === "admin" && req.body.targetUserId
+                ? req.body.targetUserId
+                : user.userId;
             const payment = await paymentService.initiatePayment({
                 ...req.body,
-                taxpayerId,
+                userId,
                 ipAddress: req.ip,
             });
-            return (0, response_1.successResponse)(res, payment, 'Payment initiated', 201);
+            return (0, response_1.successResponse)(res, payment, "Payment initiated", 201);
         }
         catch (error) {
             next(error);
@@ -23,7 +27,7 @@ class PaymentController {
         try {
             const { paymentId, transactionRef, status } = req.body;
             const payment = await paymentService.confirmPayment(paymentId, transactionRef, status);
-            return (0, response_1.successResponse)(res, payment, 'Payment confirmed');
+            return (0, response_1.successResponse)(res, payment, "Payment confirmed");
         }
         catch (error) {
             next(error);
