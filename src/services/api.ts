@@ -1,15 +1,15 @@
 // web/src/services/api.ts
 const API_BASE = '/api/v1';
 
-interface ApiResponse<T = any> {
+// Replace `any` with `unknown` for proper type safety
+interface ApiResponse<T = unknown> {
   success: boolean;
   message: string;
   data: T;
-  errors?: any;
+  errors?: unknown;
 }
 
-// ★ Export the function so other files can use it directly
-export async function request<T = any>(
+export async function request<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
@@ -76,23 +76,38 @@ export const taxApi = {
 // Payment API
 export const paymentApi = {
   getProviders: () => request('/payment/providers'),
-  initiatePayment: (data: any) => request('/payment/initiate', { method: 'POST', body: JSON.stringify(data) }),
-  confirmPayment: (data: any) => request('/payment/confirm', { method: 'POST', body: JSON.stringify(data) }),
+  initiatePayment: (data: Record<string, unknown>) =>
+    request('/payment/initiate', { method: 'POST', body: JSON.stringify(data) }),
+  confirmPayment: (data: Record<string, unknown>) =>
+    request('/payment/confirm', { method: 'POST', body: JSON.stringify(data) }),
   getHistory: (page = 1, limit = 10) => request(`/payment/history?page=${page}&limit=${limit}`),
   getStatus: (id: string) => request(`/payment/status/${id}`),
 };
 
-// Token management
-export function setTokens(accessToken: string, refreshToken: string, role?: string) {
+// ==================== TOKEN MANAGEMENT ====================
+
+export function setTokens(
+  accessToken: string,
+  refreshToken: string,
+  user?: { fullName: string; role: string }
+) {
   localStorage.setItem('dalpay_access_token', accessToken);
   localStorage.setItem('dalpay_refresh_token', refreshToken);
-  if (role) localStorage.setItem('dalpay_user_role', role);
+
+  if (user) {
+    localStorage.setItem('dalpay_user', JSON.stringify(user));
+  }
+
+  window.dispatchEvent(new Event('dalpay-user-updated'));
 }
 
 export function clearTokens() {
   localStorage.removeItem('dalpay_access_token');
   localStorage.removeItem('dalpay_refresh_token');
   localStorage.removeItem('dalpay_user_role');
+  localStorage.removeItem('dalpay_user');
+
+  window.dispatchEvent(new Event('dalpay-user-updated'));
 }
 
 export function getAccessToken() {
@@ -101,6 +116,15 @@ export function getAccessToken() {
 
 export function getUserRole(): string | null {
   return localStorage.getItem('dalpay_user_role');
+}
+
+export function getUser(): { fullName: string; role: string } | null {
+  try {
+    const raw = localStorage.getItem('dalpay_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Types
