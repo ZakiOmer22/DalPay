@@ -1,19 +1,26 @@
-import { Request, Response, NextFunction } from 'express';
-import { PaymentService } from './payment.service';
-import { successResponse } from '../../utils/response';
+// modules/payment/payment.controller.ts
+import { Request, Response, NextFunction } from "express";
+import { PaymentService } from "./payment.service";
+import { successResponse } from "../../utils/response";
 
 const paymentService = new PaymentService();
 
 export class PaymentController {
   async initiatePayment(req: Request, res: Response, next: NextFunction) {
     try {
-      const taxpayerId = (req as any).user.userId;
+      const user = (req as any).user;
+      // Allow admin to specify a target taxpayer for the payment
+      const userId =
+        user.role === "admin" && req.body.targetUserId
+          ? req.body.targetUserId
+          : user.userId;
+
       const payment = await paymentService.initiatePayment({
         ...req.body,
-        taxpayerId,
+        userId,
         ipAddress: req.ip,
       });
-      return successResponse(res, payment, 'Payment initiated', 201);
+      return successResponse(res, payment, "Payment initiated", 201);
     } catch (error) {
       next(error);
     }
@@ -22,8 +29,12 @@ export class PaymentController {
   async confirmPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const { paymentId, transactionRef, status } = req.body;
-      const payment = await paymentService.confirmPayment(paymentId, transactionRef, status);
-      return successResponse(res, payment, 'Payment confirmed');
+      const payment = await paymentService.confirmPayment(
+        paymentId,
+        transactionRef,
+        status,
+      );
+      return successResponse(res, payment, "Payment confirmed");
     } catch (error) {
       next(error);
     }
@@ -33,7 +44,11 @@ export class PaymentController {
     try {
       const taxpayerId = (req as any).user.userId;
       const { page = 1, limit = 10 } = req.query;
-      const history = await paymentService.getPaymentHistory(taxpayerId, Number(page), Number(limit));
+      const history = await paymentService.getPaymentHistory(
+        taxpayerId,
+        Number(page),
+        Number(limit),
+      );
       return successResponse(res, history);
     } catch (error) {
       next(error);
@@ -44,7 +59,10 @@ export class PaymentController {
     try {
       const taxpayerId = (req as any).user.userId;
       const { paymentId } = req.params;
-      const payment = await paymentService.getPaymentStatus(paymentId as string, taxpayerId);
+      const payment = await paymentService.getPaymentStatus(
+        paymentId as string,
+        taxpayerId,
+      );
       return successResponse(res, payment);
     } catch (error) {
       next(error);
