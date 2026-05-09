@@ -1,5 +1,5 @@
 export declare class TaxService {
-    getAssessments(userId: string): Promise<{
+    getAssessments(userId?: string): Promise<{
         assessment_id: any;
         tax_type: any;
         assessment_year: any;
