@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useEffect } from "react";
+import ScrollToTop from "@/components/shared/ScrollToTop";
 import { Layout } from "@/components/Layout";
 import HomePage from "@/pages/HomePage";
 import NotFoundPage from "@/pages/NotFoundPage";
@@ -43,6 +44,7 @@ function App() {
   return (
     <StripeProvider>
       <BrowserRouter>
+        <ScrollToTop /> {/* Scroll to top on route change */}
         <Routes>
           {/* public */}
           <Route element={<Layout />}>

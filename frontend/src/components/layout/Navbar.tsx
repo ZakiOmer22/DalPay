@@ -1,7 +1,9 @@
+// src/components/layout/Navbar.tsx
 import { useState, useEffect, useRef } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Menu, X, ChevronDown, Smartphone, LogOut, Sun, Moon,
+  User, LayoutDashboard, Settings, ShieldAlert,
 } from "lucide-react";
 import { clearTokens } from "@/services/api";
 
@@ -9,7 +11,8 @@ function cn(...classes: (string | false | undefined | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-function getInitials(name: string): string {
+function getInitials(name?: string): string {
+  if (!name) return "??";
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
@@ -44,16 +47,16 @@ const NAV_LINKS = [
 ];
 
 export function Navbar() {
-  const location = useLocation();
   const navigate = useNavigate();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openDesktopIndex, setOpenDesktopIndex] = useState<number | null>(null);
   const [openMobileSubmenu, setOpenMobileSubmenu] = useState<number | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const [dark, setDark] = useState<boolean>(() => {
-    return document.documentElement.classList.contains("dark");
-  });
+  const [dark, setDark] = useState<boolean>(() =>
+    document.documentElement.classList.contains("dark")
+  );
 
   const [user, setUser] = useState<{ fullName: string; role: string } | null>(() => {
     try {
@@ -65,18 +68,39 @@ export function Navbar() {
   });
 
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const avatarRef = useRef<HTMLDivElement>(null);
 
+  // Sync user state
   useEffect(() => {
-    setMobileOpen(false);
-    setOpenDesktopIndex(null);
-    setOpenMobileSubmenu(null);
-    try {
-      const raw = localStorage.getItem("dalpay_user");
-      setUser(raw ? JSON.parse(raw) : null);
-    } catch {
-      setUser(null);
+    const syncUser = () => {
+      try {
+        const raw = localStorage.getItem("dalpay_user");
+        setUser(raw ? JSON.parse(raw) : null);
+      } catch {
+        setUser(null);
+      }
+    };
+
+    window.addEventListener("storage", syncUser);
+    window.addEventListener("dalpay-user-updated", syncUser);
+    return () => {
+      window.removeEventListener("storage", syncUser);
+      window.removeEventListener("dalpay-user-updated", syncUser);
+    };
+  }, []);
+
+  // Close user dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (avatarRef.current && !avatarRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    if (userMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
     }
-  }, [location.pathname]);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [userMenuOpen]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -123,8 +147,11 @@ export function Navbar() {
     clearTokens();
     localStorage.removeItem("dalpay_user");
     setUser(null);
+    setUserMenuOpen(false);
     navigate("/login");
   };
+
+  const userDashboardLink = user?.role === "admin" ? "/admin/dashboard" : "/dashboard";
 
   return (
     <>
@@ -140,9 +167,9 @@ export function Navbar() {
           <div className="flex items-center justify-between h-20">
             <Link to="/" className="shrink-0 flex items-center">
               <img
-                src="/icon.png"
+                src="/logo.png"
                 alt="DalPay"
-                className="h-14 md:h-16 w-auto object-contain"
+                className="h-16 md:h-20 lg:h-24 w-auto object-contain"
                 onError={(e) => {
                   const target = e.currentTarget as HTMLImageElement;
                   target.style.display = "none";
@@ -150,10 +177,6 @@ export function Navbar() {
                   if (sibling) sibling.style.display = "flex";
                 }}
               />
-              <span className="hidden items-center gap-1 text-2xl font-extrabold" style={{ display: "none" }}>
-                <span className="text-[#0F7B8C]">Dal</span>
-                <span className="text-gray-900 dark:text-white">Pay</span>
-              </span>
             </Link>
 
             <ul className="hidden lg:flex items-center gap-0.5 font-medium">
@@ -168,7 +191,7 @@ export function Navbar() {
                     className={cn(
                       "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors",
                       "text-gray-600 dark:text-gray-300",
-                      "hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC]",
+                      "hover:text-[#0F7B8C] dark:hover:text-primary-light",
                       "hover:bg-gray-100 dark:hover:bg-gray-800"
                     )}
                   >
@@ -181,7 +204,7 @@ export function Navbar() {
                         <Link
                           key={link.href}
                           to={link.href}
-                          className="block px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC] hover:bg-gray-50 dark:hover:bg-gray-700/60"
+                          className="block px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
                         >
                           {link.label}
                         </Link>
@@ -191,18 +214,13 @@ export function Navbar() {
                 </li>
               ))}
               <li>
-                <Link to="/about" className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <Link to="/about" className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   About
                 </Link>
               </li>
               <li>
-                <Link to="/contact" className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                <Link to="/contact" className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   Contact
-                </Link>
-              </li>
-              <li>
-                <Link to="/ussd" className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC] hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                  USSD Simulator
                 </Link>
               </li>
             </ul>
@@ -210,7 +228,7 @@ export function Navbar() {
             <div className="flex items-center gap-2">
               <Link
                 to="/mobile"
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-[#0F7B8C]/30 text-[#0F7B8C] dark:text-[#3BA7BC] hover:border-[#0F7B8C] hover:bg-[#0F7B8C]/5"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-[#0F7B8C]/30 text-[#0F7B8C] dark:text-primary-light hover:border-[#0F7B8C] hover:bg-[#0F7B8C]/5"
               >
                 <Smartphone size={13} />
                 App
@@ -225,28 +243,75 @@ export function Navbar() {
               </button>
 
               {user ? (
-                <div className="hidden sm:flex items-center gap-2.5 ml-1 pl-2 border-l border-gray-200 dark:border-gray-700">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#0F7B8C] to-[#3BA7BC] flex items-center justify-center text-[11px] font-bold text-white shrink-0 shadow-sm">
-                    {getInitials(user.fullName)}
-                  </div>
-                  <div className="hidden lg:flex flex-col leading-tight">
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{user.fullName}</span>
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 capitalize">{user.role}</span>
-                  </div>
+                <div className="relative ml-2" ref={avatarRef}>
+                  {/* Avatar trigger */}
                   <button
-                    onClick={handleLogout}
-                    title="Sign out"
-                    className="p-1.5 rounded-lg text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    onClick={() => setUserMenuOpen(!userMenuOpen)}
+                    className="flex items-center gap-2.5 pl-2 border-l border-gray-200 dark:border-gray-700 focus:outline-none"
                   >
-                    <LogOut size={16} />
+                    <div className="w-8 h-8 rounded-full bg-linear-to-br from-[#0F7B8C] to-primary-light flex items-center justify-center text-[11px] font-bold text-white shadow-sm">
+                      {getInitials(user.fullName)}
+                    </div>
+                    <div className="hidden lg:flex flex-col leading-tight text-left">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{user.fullName}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400 capitalize">{user.role}</span>
+                    </div>
                   </button>
+
+                  {/* Dropdown menu */}
+                  {userMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-56 z-50 rounded-xl shadow-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 py-1.5 animate-fadeIn">
+                      <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{user.fullName}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user.role}</p>
+                      </div>
+                      <Link
+                        to={userDashboardLink}
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
+                      >
+                        <LayoutDashboard size={16} /> Dashboard
+                      </Link>
+                      {user.role === "admin" && (
+                        <Link
+                          to="/admin/dashboard"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
+                        >
+                          <ShieldAlert size={16} /> Admin Panel
+                        </Link>
+                      )}
+                      <Link
+                        to="/profile"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
+                      >
+                        <User size={16} /> Profile
+                      </Link>
+                      <Link
+                        to="/settings"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
+                      >
+                        <Settings size={16} /> Settings
+                      </Link>
+                      <div className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
+                        <button
+                          onClick={handleLogout}
+                          className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        >
+                          <LogOut size={16} /> Sign out
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="hidden sm:flex items-center gap-1.5 ml-1 pl-2 border-l border-gray-200 dark:border-gray-700">
-                  <Link to="/login" className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC] transition-colors">
+                  <Link to="/login" className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-primary-light transition-colors">
                     Sign In
                   </Link>
-                  <Link to="/register" className="px-4 py-1.5 bg-[#0F7B8C] hover:bg-[#0A5D6B] text-white text-sm font-semibold rounded-lg transition-colors shadow-sm">
+                  <Link to="/register" className="px-4 py-1.5 bg-[#0F7B8C] hover:bg-primary-dark text-white text-sm font-semibold rounded-lg transition-colors shadow-sm">
                     Register
                   </Link>
                 </div>
@@ -263,6 +328,7 @@ export function Navbar() {
         </div>
       </nav>
 
+      {/* Mobile drawer overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden" onClick={() => setMobileOpen(false)} />
       )}
@@ -294,7 +360,7 @@ export function Navbar() {
 
           {user && (
             <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0F7B8C] to-[#3BA7BC] flex items-center justify-center text-sm font-bold text-white shrink-0">
+              <div className="w-10 h-10 rounded-full bg-linear-to-br from-[#0F7B8C] to-primary-light flex items-center justify-center text-sm font-bold text-white shrink-0">
                 {getInitials(user.fullName)}
               </div>
               <div className="flex-1 min-w-0">
@@ -327,7 +393,7 @@ export function Navbar() {
                         key={link.href}
                         to={link.href}
                         onClick={() => setMobileOpen(false)}
-                        className="block px-2 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-[#3BA7BC] rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                        className="block px-2 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-primary-light rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                       >
                         {link.label}
                       </Link>
@@ -349,7 +415,7 @@ export function Navbar() {
               <Link to="/login" onClick={() => setMobileOpen(false)} className="block text-center py-2.5 text-sm font-semibold text-gray-800 dark:text-white border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                 Sign In
               </Link>
-              <Link to="/register" onClick={() => setMobileOpen(false)} className="block text-center py-2.5 text-sm font-bold text-white bg-[#0F7B8C] hover:bg-[#0A5D6B] rounded-xl transition-colors shadow-sm">
+              <Link to="/register" onClick={() => setMobileOpen(false)} className="block text-center py-2.5 text-sm font-bold text-white bg-[#0F7B8C] hover:bg-primary-dark rounded-xl transition-colors shadow-sm">
                 Register Now
               </Link>
             </div>

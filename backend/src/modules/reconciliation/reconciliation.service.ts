@@ -1,13 +1,13 @@
+// modules/reconciliation/reconciliation.service.ts (updated with standard audit log)
 import pool from '../../config/database';
 import { AppError, NotFoundError } from '../../utils/errors';
+import { insertAuditLog } from '../../utils/audit';
 import logger from '../../utils/logger';
 
 export class ReconciliationService {
-  // Run daily reconciliation for all providers
   async runDailyReconciliation(adminId: string, date?: string) {
     const reconciliationDate = date || new Date().toISOString().split('T')[0];
 
-    // Get all active providers
     const providers = await pool.query(
       "SELECT * FROM mobile_money_providers WHERE status = 'active'"
     );
@@ -15,7 +15,6 @@ export class ReconciliationService {
     const results = [];
 
     for (const provider of providers.rows) {
-      // Get expected amount (confirmed payments for this provider on this date)
       const expected = await pool.query(
         `SELECT COALESCE(SUM(payment_amount), 0) as total
          FROM tax_payments
@@ -25,12 +24,9 @@ export class ReconciliationService {
         [provider.provider_id, reconciliationDate]
       );
 
-      // In production, get actual amount from mobile money operator's settlement report
-      // Here we simulate it
       const actualAmount = parseFloat(expected.rows[0].total);
-      const varianceAmount = 0; // In production: actual - expected
+      const varianceAmount = 0;
 
-      // Create reconciliation record
       const result = await pool.query(
         `INSERT INTO payment_reconciliations 
          (provider_id, reconciliation_date, expected_amount, actual_amount, variance_amount, status)
@@ -41,7 +37,6 @@ export class ReconciliationService {
       );
 
       if (result.rows.length > 0) {
-        // Mark payments as reconciled
         await pool.query(
           `UPDATE tax_payments SET payment_status = 'reconciled', reconciliation_date = $1
            WHERE provider_id = $2 AND payment_date = $1 AND payment_status = 'confirmed'`,
@@ -52,18 +47,18 @@ export class ReconciliationService {
       }
     }
 
-    // Audit log
-    await pool.query(
-      `INSERT INTO audit_logs (user_id, action_type, affected_entity, action_details)
-       VALUES ($1, $2, $3, $4)`,
-      [adminId, 'RECONCILIATION_RUN', reconciliationDate, JSON.stringify({ providers: providers.rows.length })]
-    );
+    await insertAuditLog({
+      userId: adminId,
+      action: 'RECONCILIATION_RUN',
+      entity: 'reconciliation',
+      entityId: reconciliationDate,
+      metadata: { providers: providers.rows.length },
+    });
 
     logger.info('Daily reconciliation completed', { date: reconciliationDate, providers: providers.rows.length });
     return { date: reconciliationDate, reconciliations: results };
   }
 
-  // Get reconciliation report for a date
   async getReconciliationReport(date: string) {
     const result = await pool.query(
       `SELECT pr.*, mmp.provider_name
@@ -81,7 +76,6 @@ export class ReconciliationService {
     return result.rows;
   }
 
-  // Get reconciliation summary (all dates)
   async getReconciliationSummary(days = 30) {
     const result = await pool.query(
       `SELECT reconciliation_date,
@@ -99,7 +93,6 @@ export class ReconciliationService {
     return result.rows;
   }
 
-  // File a dispute for a variance
   async fileDispute(reconciliationId: string, reason: string, userId: string) {
     const result = await pool.query(
       `UPDATE payment_reconciliations 
@@ -113,11 +106,13 @@ export class ReconciliationService {
       throw new NotFoundError('Reconciliation record not found or already resolved');
     }
 
-    await pool.query(
-      `INSERT INTO audit_logs (user_id, action_type, affected_entity, action_details)
-       VALUES ($1, $2, $3, $4)`,
-      [userId, 'RECONCILIATION_DISPUTED', reconciliationId, JSON.stringify({ reason })]
-    );
+    await insertAuditLog({
+      userId,
+      action: 'RECONCILIATION_DISPUTED',
+      entity: 'reconciliation',
+      entityId: reconciliationId,
+      metadata: { reason },
+    });
 
     return result.rows[0];
   }

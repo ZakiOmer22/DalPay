@@ -18,6 +18,48 @@ import {
 } from "lucide-react";
 import { authApi, setTokens } from "@/services/api";
 
+// Error shape thrown by our api.ts `request` function
+interface ApiError {
+  message?: string;
+  status?: number;
+  data?: {
+    code?: string;
+    retryAfterMinutes?: number;
+  };
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error && typeof error === "object") {
+    const err = error as ApiError;
+    const msg = err.message;
+    const status = err.status;
+    const code = err.data?.code;
+
+    if (status === 429) {
+      return "Too many login attempts. Please wait a moment and try again.";
+    }
+
+    if (status === 403) {
+      // Backend may send code "ACCOUNT_LOCKED" or "INTERNAL_ERROR" with message containing "locked"
+      if (code === "ACCOUNT_LOCKED" || msg?.toLowerCase().includes("lock")) {
+        const minutes = err.data?.retryAfterMinutes ?? 15;
+        return `Account temporarily locked. Please try again in ${minutes} minute(s).`;
+      }
+      return msg || "Access denied.";
+    }
+
+    if (status === 401) {
+      return "Invalid phone number/email or password. Please check your credentials.";
+    }
+
+    // Fallback to the message directly from the server
+    if (msg) return msg;
+  }
+
+  if (error instanceof Error) return error.message;
+  return "Login failed. Please check your connection and try again.";
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -28,24 +70,6 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [loginMethod, setLoginMethod] = useState<"phone" | "email">("email");
-
-  // const [dark, setDark] = useState(() => {
-  //   return localStorage.getItem("dalpay-theme") === "dark";
-  // });
-
-  // useEffect(() => {
-  //   if (dark) {
-  //     document.documentElement.classList.add("dark");
-  //   } else {
-  //     document.documentElement.classList.remove("dark");
-  //   }
-  // }, [dark]);
-
-  // const toggleTheme = () => {
-  //   const next = !dark;
-  //   setDark(next);
-  //   localStorage.setItem("dalpay-theme", next ? "dark" : "light");
-  // };
 
   const [successMessage, setSuccessMessage] = useState(
     searchParams.get("registered") === "true"
@@ -68,23 +92,26 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setError("");
     setSuccessMessage("");
+
     try {
-      const payload: any = { password };
-      if (loginMethod === "email") payload.email = identifier.trim();
-      else payload.phoneNumber = identifier.trim();
+      const payload =
+        loginMethod === "email"
+          ? { email: identifier.trim(), password }
+          : { phoneNumber: identifier.trim(), password };
 
       const response = await authApi.login(payload);
-      const { accessToken, refreshToken, user } = response.data;
+      const { data } = response;
 
-      setTokens(accessToken, refreshToken, user.role);
+      // Store user object for the Navbar
+      setTokens(data.accessToken, data.refreshToken, {
+        fullName: data.user.fullName,
+        role: data.user.role,
+      });
 
       setSuccessMessage("Login successful! Redirecting...");
-
-      setTimeout(() => {
-        navigate("/dashboard");
-      }, 1500);
-    } catch (err: any) {
-      setError(err?.message || err?.data?.message || "Login failed.");
+      setTimeout(() => navigate("/dashboard"), 1500);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -94,16 +121,16 @@ export default function LoginPage() {
     <div className="min-h-screen flex bg-white dark:bg-[#0A0E1A]">
       {/* Left panel */}
       <div className="hidden lg:flex lg:w-[45%] xl:w-1/2 relative overflow-hidden bg-gradient-to-br from-[#0A5D6B] via-[#0F7B8C] to-[#3BA7BC]">
-        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] bg-[#10B981]/20 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-white/5 rounded-full blur-3xl" />
+        <div className="absolute -top-40 -left-40 w-125 h-125 bg-white/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 w-125 h-125 bg-accent/20 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 bg-white/5 rounded-full blur-3xl" />
 
         <div className="relative z-10 flex flex-col justify-center pl-14 xl:pl-20 pr-10 w-full text-white">
           <Link to="/" className="flex items-center gap-4 mb-14 group">
             <img src="/logo.png" alt="DalPay" className="h-20 w-auto brightness-0 invert" />
             <div>
               <span className="text-3xl font-extrabold tracking-tight">
-                Dal<span className="text-[#10B981]">Pay</span>
+                Dal<span className="text-accent">Pay</span>
               </span>
               <p className="text-white/50 text-[11px] uppercase tracking-[0.2em]">Ministry of Finance</p>
             </div>
@@ -112,7 +139,7 @@ export default function LoginPage() {
           <h1 className="text-5xl xl:text-6xl font-extrabold leading-[1.1] mb-6">
             Pay Taxes
             <br />
-            <span className="text-[#10B981]">Without the Queue</span>
+            <span className="text-accent">Without the Queue</span>
           </h1>
           <p className="text-white/60 text-lg max-w-md mb-12 leading-relaxed">
             Somaliland's official digital tax platform. Connect your mobile money —
@@ -130,7 +157,7 @@ export default function LoginPage() {
                 key={label}
                 className="inline-flex items-center gap-2.5 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2.5"
               >
-                <Icon size={15} className="text-[#10B981]" />
+                <Icon size={15} className="text-accent" />
                 <span className="text-xs font-semibold">{label}</span>
               </div>
             ))}
@@ -140,8 +167,7 @@ export default function LoginPage() {
 
       {/* Right panel */}
       <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900/30 px-6 py-16 relative">
-
-        <div className="w-full max-w-[420px]">
+        <div className="w-full max-w-105">
           <Link to="/" className="lg:hidden flex items-center justify-center gap-3 mb-10">
             <img src="/logo.png" alt="DalPay" className="h-7 w-auto" />
             <span className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -163,7 +189,7 @@ export default function LoginPage() {
           )}
 
           <div className="bg-white dark:bg-[#111627] border border-gray-200 dark:border-gray-700 rounded-3xl p-8 shadow-2xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F7B8C]/10 border border-[#0F7B8C]/20 text-[#0F7B8C] dark:text-[#3BA7BC] text-[11px] font-semibold mb-6">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F7B8C]/10 border border-[#0F7B8C]/20 text-[#0F7B8C] dark:text-primary-light text-[11px] font-semibold mb-6">
               <Sparkles size={12} /> Official Government Platform
             </div>
 
@@ -231,7 +257,7 @@ export default function LoginPage() {
               <div className="text-right">
                 <Link
                   to="/forgot-password"
-                  className="text-xs text-[#0F7B8C] dark:text-[#3BA7BC] hover:text-[#0A5D6B] dark:hover:text-[#3BA7BC]/80 font-medium"
+                  className="text-xs text-[#0F7B8C] dark:text-primary-light hover:text-primary-dark dark:hover:text-primary-light/80 font-medium"
                 >
                   Forgot password?
                 </Link>
@@ -255,9 +281,15 @@ export default function LoginPage() {
 
             <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
               Don't have an account?{" "}
-              <Link to="/register" className="text-[#0F7B8C] dark:text-[#3BA7BC] font-semibold hover:text-[#0A5D6B] dark:hover:text-[#3BA7BC]/80">
+              <Link to="/register" className="text-[#0F7B8C] dark:text-primary-light font-semibold hover:text-primary-dark dark:hover:text-primary-light/80">
                 Create one
               </Link>
+            </p>
+
+            <p className="mt-5 text-xs text-gray-400 dark:text-gray-500 text-center">
+              For your security, never share your password or one‑time codes.
+              <br />
+              If you're on a public computer, always sign out when done.
             </p>
           </div>
 

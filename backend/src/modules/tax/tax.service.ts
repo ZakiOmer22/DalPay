@@ -1,16 +1,21 @@
 // server/src/modules/tax/tax.service.ts
 import pool from '../../config/database';
 import { NotFoundError } from '../../utils/errors';
+import { insertAuditLog } from '../../utils/audit';
 
 export class TaxService {
-  async getAssessments(userId: string) {
-    const result = await pool.query(
-      `SELECT id, user_id, tax_type, amount, year, due_date, status, auto_generated, created_at
-       FROM tax_assessments
-       WHERE user_id = $1
-       ORDER BY year DESC, created_at DESC`,
-      [userId]
-    );
+  async getAssessments(userId?: string) {
+    let query = `SELECT id, user_id, tax_type, amount, year, due_date, status, auto_generated, created_at
+                 FROM tax_assessments`;
+    const params: any[] = [];
+
+    if (userId) {
+      query += ' WHERE user_id = $1';
+      params.push(userId);
+    }
+    query += ' ORDER BY year DESC, created_at DESC';
+
+    const result = await pool.query(query, params);
     return result.rows.map(row => ({
       assessment_id: row.id,
       tax_type: row.tax_type,
@@ -58,11 +63,15 @@ export class TaxService {
       [data.userId, data.taxType, data.amount, data.year, data.dueDate]
     );
     const row = result.rows[0];
-    await pool.query(
-      `INSERT INTO audit_logs (user_id, action, entity, entity_id, metadata)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [data.adminId, 'ASSESSMENT_CREATED', 'tax_assessments', row.id, JSON.stringify({ amount: data.amount })]
-    );
+
+    await insertAuditLog({
+      userId: data.adminId,
+      action: 'ASSESSMENT_CREATED',
+      entity: 'tax_assessments',
+      entityId: row.id,
+      metadata: { amount: data.amount },
+    });
+
     return {
       assessment_id: row.id,
       tax_type: row.tax_type,

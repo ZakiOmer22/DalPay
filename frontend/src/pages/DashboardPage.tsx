@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import { CircleDollarSign } from "lucide-react";
-import { getAccessToken, getUserRole, clearTokens } from "@/services/api";
+import { getAccessToken } from "@/services/api";
 
 const messages = [
   "Preparing your dashboard…",
@@ -12,14 +12,14 @@ const messages = [
   "Loading your account…",
 ];
 
-// Theme store – syncs with localStorage and applies "dark" class to <html>
+// ─── Theme store – synced with the global "theme" key (same as Navbar) ───
 function subscribe(callback: () => void) {
   window.addEventListener("storage", callback);
   return () => window.removeEventListener("storage", callback);
 }
 
 function getSnapshot() {
-  return localStorage.getItem("dalpay-theme") === "dark";
+  return localStorage.getItem("theme") === "dark";
 }
 
 function applyTheme(isDark: boolean) {
@@ -43,10 +43,24 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const token = getAccessToken();
-    const role = getUserRole();
 
-    if (!token) {
-      clearTokens();
+    // Retrieve user role from the stored user object (set by setTokens after login)
+    let role: string | null = null;
+    try {
+      const raw = localStorage.getItem("dalpay_user");
+      if (raw) {
+        const user = JSON.parse(raw) as { fullName: string; role: string };
+        role = user.role;
+      }
+    } catch {
+      // ignore parse errors
+    }
+
+    if (!token || !role) {
+      // No valid session – clear stale data and send to login
+      localStorage.removeItem("dalpay_access_token");
+      localStorage.removeItem("dalpay_refresh_token");
+      localStorage.removeItem("dalpay_user");
       navigate("/login", { replace: true });
       return;
     }
@@ -68,7 +82,10 @@ export default function DashboardPage() {
           navigate("/taxpayer/dashboard", { replace: true });
           break;
         default:
-          clearTokens();
+          // Unknown role – force logout
+          localStorage.removeItem("dalpay_access_token");
+          localStorage.removeItem("dalpay_refresh_token");
+          localStorage.removeItem("dalpay_user");
           navigate("/login", { replace: true });
       }
     }, 2500);
@@ -85,26 +102,49 @@ export default function DashboardPage() {
   if (!ready) return null;
 
   return (
-    <div className={`min-h-screen flex items-center justify-center px-4 ${isDark ? "bg-gray-950" : "bg-white"}`}>
+    <div
+      className={`min-h-screen flex items-center justify-center px-4 ${
+        isDark ? "bg-gray-950" : "bg-white"
+      }`}
+    >
       <div className="text-center space-y-8 max-w-sm w-full">
+        {/* Spinner */}
         <div className="relative mx-auto w-20 h-20">
-          <div className={`absolute inset-0 rounded-full border-4 ${isDark ? "border-gray-700" : "border-gray-200"}`} />
+          <div
+            className={`absolute inset-0 rounded-full border-4 ${
+              isDark ? "border-gray-700" : "border-gray-200"
+            }`}
+          />
           <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary animate-spin" />
           <div className="absolute inset-0 flex items-center justify-center">
             <CircleDollarSign size={32} className="text-primary" strokeWidth={1.5} />
           </div>
         </div>
 
+        {/* Brand + loading message */}
         <div>
-          <h1 className={`text-4xl font-black tracking-tight ${isDark ? "text-white" : "text-gray-900"}`}>
+          <h1
+            className={`text-4xl font-black tracking-tight ${
+              isDark ? "text-white" : "text-gray-900"
+            }`}
+          >
             Dal<span className="text-primary">Pay</span>
           </h1>
-          <p className={`text-sm mt-2 font-medium h-6 transition-all ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+          <p
+            className={`text-sm mt-2 font-medium h-6 transition-all ${
+              isDark ? "text-gray-400" : "text-gray-500"
+            }`}
+          >
             {message}
           </p>
         </div>
 
-        <div className={`w-full h-2 rounded-full overflow-hidden ${isDark ? "bg-gray-800" : "bg-gray-200"}`}>
+        {/* Progress bar */}
+        <div
+          className={`w-full h-2 rounded-full overflow-hidden ${
+            isDark ? "bg-gray-800" : "bg-gray-200"
+          }`}
+        >
           <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-primary to-accent animate-pulse" />
         </div>
       </div>
