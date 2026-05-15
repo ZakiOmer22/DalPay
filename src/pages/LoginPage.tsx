@@ -18,6 +18,23 @@ import {
 } from "lucide-react";
 import { authApi, setTokens } from "@/services/api";
 
+// ------------------------------------------------------------------
+// Define the shape of a successful login response
+// (matches what the backend actually returns)
+interface LoginResponseData {
+  user: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    role: string;
+    nationalId: string;
+  };
+  accessToken: string;
+  refreshToken: string;
+}
+
+// ------------------------------------------------------------------
 // Error shape thrown by our api.ts `request` function
 interface ApiError {
   message?: string;
@@ -99,8 +116,9 @@ export default function LoginPage() {
           ? { email: identifier.trim(), password }
           : { phoneNumber: identifier.trim(), password };
 
+      // The login endpoint returns { success, data: LoginResponseData, message, ... }
       const response = await authApi.login(payload);
-      const { data } = response;
+      const data = response.data as LoginResponseData;
 
       // Store user object for the Navbar
       setTokens(data.accessToken, data.refreshToken, {
