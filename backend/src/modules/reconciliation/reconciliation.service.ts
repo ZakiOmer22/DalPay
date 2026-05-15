@@ -1,24 +1,23 @@
 // modules/reconciliation/reconciliation.service.ts
-import pool from '../../config/database';
-import { NotFoundError } from '../../utils/errors';
-import { insertAuditLog } from '../../utils/audit';
-import logger from '../../utils/logger';
+import pool from "../../config/database";
+import { NotFoundError } from "../../utils/errors";
+import { insertAuditLog } from "../../utils/audit";
+import logger from "../../utils/logger";
 
 export class ReconciliationService {
-
   /**
    * Run reconciliation for today (or a given date).
    * Only called from the admin controller (authenticated user).
    */
   async runDailyReconciliation(adminId: string, date?: string) {
-    const reconciliationDate = date || new Date().toISOString().split('T')[0];
+    const reconciliationDate = date || new Date().toISOString().split("T")[0];
 
     const providersResult = await pool.query(
-      `SELECT provider_id, provider_name FROM payment_providers WHERE is_active = true`
+      `SELECT provider_id, provider_name FROM payment_providers WHERE is_active = true`,
     );
     const providers = providersResult.rows;
 
-    const results = [];
+    const results: any[] = [];
 
     for (const provider of providers) {
       const collectedResult = await pool.query(
@@ -27,11 +26,11 @@ export class ReconciliationService {
          WHERE provider = $1
            AND DATE(created_at) = $2
            AND status = 'confirmed'`,
-        [provider.provider_id, reconciliationDate]
+        [provider.provider_id, reconciliationDate],
       );
 
       const totalCollected = parseFloat(collectedResult.rows[0].total);
-      const totalDisbursed = totalCollected;   // assume perfect match
+      const totalDisbursed = totalCollected; // assume perfect match
       const discrepancies = 0;
 
       results.push({
@@ -44,26 +43,32 @@ export class ReconciliationService {
     }
 
     // Only log an audit entry when adminId is a real UUID (actual admin user)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (adminId && uuidRegex.test(adminId)) {
       try {
         await insertAuditLog({
           userId: adminId,
-          action: 'RECONCILIATION_RUN',
-          entity: 'reconciliation',
+          action: "RECONCILIATION_RUN",
+          entity: "reconciliation",
           entityId: reconciliationDate,
           metadata: { providers: providers.length },
         });
       } catch (auditErr) {
-        logger.warn('Audit log write failed (non-critical)', { error: auditErr });
+        logger.warn("Audit log write failed (non-critical)", {
+          error: auditErr,
+        });
       }
     }
 
-    logger.info('Daily reconciliation completed', { date: reconciliationDate, providers: providers.length });
+    logger.info("Daily reconciliation completed", {
+      date: reconciliationDate,
+      providers: providers.length,
+    });
 
     return {
       date: reconciliationDate,
-      status: 'success',
+      status: "success",
       total_collected: results.reduce((sum, r) => sum + r.total_collected, 0),
       total_disbursed: results.reduce((sum, r) => sum + r.total_disbursed, 0),
       discrepancies: results.reduce((sum, r) => sum + r.discrepancies, 0),
@@ -76,7 +81,7 @@ export class ReconciliationService {
    */
   async getReconciliationReport(date: string) {
     const service = new ReconciliationService();
-    const result = await service.runDailyReconciliation('report', date);
+    const result = await service.runDailyReconciliation("report", date);
     return result;
   }
 
@@ -95,12 +100,12 @@ export class ReconciliationService {
          AND created_at >= CURRENT_DATE - $1::integer
        GROUP BY DATE(created_at)
        ORDER BY date DESC`,
-      [days]
+      [days],
     );
 
-    const summary = result.rows.map(row => ({
-      date: row.date.toISOString().split('T')[0],
-      status: 'success',
+    const summary = result.rows.map((row) => ({
+      date: row.date.toISOString().split("T")[0],
+      status: "success",
       total_collected: parseFloat(row.total_collected),
       discrepancies: 0,
     }));
@@ -114,11 +119,11 @@ export class ReconciliationService {
   async fileDispute(reconciliationId: string, reason: string, userId: string) {
     await insertAuditLog({
       userId,
-      action: 'RECONCILIATION_DISPUTED',
-      entity: 'reconciliation',
+      action: "RECONCILIATION_DISPUTED",
+      entity: "reconciliation",
       entityId: reconciliationId,
       metadata: { reason },
     });
-    return { id: reconciliationId, status: 'disputed' };
+    return { id: reconciliationId, status: "disputed" };
   }
 }
