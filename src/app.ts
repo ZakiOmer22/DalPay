@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import slowDown from 'express-slow-down';
 import hpp from 'hpp';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser'; // <-- NEW
 import { env } from './config/env';
 import authRoutes from './modules/auth/auth.routes';
 import taxRoutes from './modules/tax/tax.routes';
@@ -21,31 +22,20 @@ import logger from './utils/logger';
 import { prometheusRegister, metrics } from './utils/metrics';
 import pool from './config/database';
 import ledgerRoutes from './modules/ledger/ledger.routes';
+import { adminRoutes } from './modules/admin/admin.routes';
+import auditRoutes from './modules/audit/audit.routes';
+import notificationRoutes from './modules/notification/notification.routes';
+import settingsRoutes from './modules/settings/settings.routes';
+import userRoutes from './modules/user/user.routes';
 
 const app = express();
 
 // ==================== TRUST PROXY ====================
 app.set('trust proxy', 1);
 
-// ==================== SECURITY MIDDLEWARE ====================
-
-app.use(helmet());
-
-app.use(
-  helmet.contentSecurityPolicy({
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'"],
-      fontSrc: ["'self'"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'none'"],
-    },
-  })
-);
+// ==================== SECURITY HEADERS ====================
+// We must NOT use helmet() or helmet.contentSecurityPolicy – those inject a nonce.
+// Instead, we apply every header individually and set CSP manually.
 
 app.use(helmet.crossOriginEmbedderPolicy({ policy: 'require-corp' }));
 app.use(helmet.crossOriginOpenerPolicy({ policy: 'same-origin' }));
@@ -60,6 +50,27 @@ app.use(helmet.originAgentCluster());
 app.use(helmet.permittedCrossDomainPolicies({ permittedPolicies: 'none' }));
 app.use(helmet.referrerPolicy({ policy: 'strict-origin-when-cross-origin' }));
 app.use(helmet.xssFilter());
+
+// ==================== CUSTOM CONTENT SECURITY POLICY (NO NONCE) ====================
+// This is the ONLY CSP header we send – Turnstile required sources + hash.
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' https://challenges.cloudflare.com blob: " +
+      "'sha256-eJGI0Ik4oYe/PKLDOt4wcN76wYs8h+Ew05pMzdY6xG8=' 'unsafe-eval'; " +
+    "worker-src 'self' blob: https://challenges.cloudflare.com; " +
+    "child-src 'self' blob: https://challenges.cloudflare.com; " +
+    "frame-src 'self' https://challenges.cloudflare.com; " +
+    "connect-src 'self' https://challenges.cloudflare.com; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https:; " +
+    "font-src 'self'; " +
+    "object-src 'none'; " +
+    "media-src 'self'"
+  );
+  next();
+});
 
 // ==================== CORS ====================
 const allowedOrigins = [
@@ -86,13 +97,10 @@ app.use(
 
 // ==================== RATE LIMITING & DDOS PROTECTION ====================
 
-// Global rate limiter – uses userId if available, otherwise falls back to req.ip (IPv6 safe)
 app.use('/api/', rateLimit({
   windowMs: env.rateLimit.windowMs,
   max: env.rateLimit.max,
   keyGenerator: (req) => {
-    // Use the library's built-in ipKeyGenerator to correctly normalise IPv6 addresses
-    // This prevents bypassing the limit on IPv6 connections
     const ip = (req as any).rateLimit?.ipKeyGenerator?.(req) ?? req.ip;
     return (req as any).user?.userId || ip;
   },
@@ -124,6 +132,7 @@ app.use('/api/v1/payment/initiate', rateLimit({
 // ==================== BODY PARSER ====================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());   // <-- NEW
 
 // ==================== HTTP PARAMETER POLLUTION PROTECTION ====================
 app.use(hpp());
@@ -140,7 +149,6 @@ app.use(
 
 // ==================== ROUTES ====================
 
-// Health check (public)
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -150,10 +158,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Serve uploaded files
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
-// Prometheus metrics endpoint
 app.get('/metrics', async (req, res) => {
   const key = req.headers['x-metrics-key'] as string;
   if (key !== process.env.METRICS_KEY) {
@@ -173,7 +179,6 @@ app.get('/metrics', async (req, res) => {
   }
 });
 
-// API v1 routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/tax', taxRoutes);
 app.use('/api/v1/payment', paymentRoutes);
@@ -183,15 +188,18 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/fraud', fraudRoutes);
 app.use('/api/v1/documents', documentsRoutes);
 app.use('/api/v1/ledger', ledgerRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/audit', auditRoutes);
+app.use('/api/v1/notification', notificationRoutes);
+app.use("/api/v1/settings", settingsRoutes);
+app.use("/api/v1/user", userRoutes);
 
 // ==================== ERROR HANDLING ====================
 
-// 404 handler
 app.use((req, res) => {
   errorResponse(res, 'Route not found', 404, undefined, 'NOT_FOUND', req.path);
 });
 
-// Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   const statusCode = err.statusCode || 500;
   const code = err.code || 'INTERNAL_ERROR';

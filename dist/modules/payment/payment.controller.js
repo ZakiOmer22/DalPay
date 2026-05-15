@@ -5,10 +5,12 @@ const payment_service_1 = require("./payment.service");
 const response_1 = require("../../utils/response");
 const paymentService = new payment_service_1.PaymentService();
 class PaymentController {
+    constructor() {
+        this.paymentService = paymentService;
+    }
     async initiatePayment(req, res, next) {
         try {
             const user = req.user;
-            // Allow admin to specify a target taxpayer for the payment
             const userId = user.role === "admin" && req.body.targetUserId
                 ? req.body.targetUserId
                 : user.userId;
@@ -59,6 +61,34 @@ class PaymentController {
         try {
             const providers = await paymentService.getProviders();
             return (0, response_1.successResponse)(res, providers);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async getAllPaymentsAdmin(req, res, next) {
+        try {
+            const { page = 1, limit = 20 } = req.query;
+            const pageNum = parseInt(page) || 1;
+            const limitNum = parseInt(limit) || 20;
+            const offset = (pageNum - 1) * limitNum;
+            const payments = await this.paymentService.getAllPayments(limitNum, offset);
+            const total = await this.paymentService.getTotalPaymentsCount();
+            (0, response_1.successResponse)(res, {
+                payments,
+                total,
+                page: pageNum,
+                limit: limitNum,
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    async createProvider(req, res, next) {
+        try {
+            const provider = await paymentService.createProvider(req.body);
+            return (0, response_1.successResponse)(res, provider, "Provider created", 201);
         }
         catch (error) {
             next(error);

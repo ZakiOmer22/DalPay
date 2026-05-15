@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt, { SignOptions } from "jsonwebtoken";
 import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
+import nodemailer from "nodemailer";
 import pool from "../../config/database";
 import { env } from "../../config/env";
 import { AppError } from "../../utils/errors";
@@ -101,7 +102,6 @@ export class AuthService {
 
     logger.info("New user registered", { id: user.id });
 
-    // ✅ role added
     const tokens = this.generateTokens(
       user.id,
       0,
@@ -123,9 +123,97 @@ export class AuthService {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        nationalId: user.national_id,
       },
       ...tokens,
+    };
+  }
+
+  async registerUnverified(data: {
+    nationalId: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+    phoneNumber: string;
+    password: string;
+    dateOfBirth?: string;
+    gender?: string;
+    occupation?: string;
+    region?: string;
+    district?: string;
+    address?: string;
+    idType?: string;
+    idNumber?: string;
+    drivingLicenseNumber?: string;
+    proofOfAddressType?: string;
+    stripeVerificationId?: string;
+    parentName?: string;
+    parentNationalId?: string;
+    parentPhone?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }) {
+    const phoneHash = hashField(data.phoneNumber);
+    const nationalIdHash = hashField(data.nationalId);
+    const emailHash = data.email ? hashField(data.email) : null;
+
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE national_id_hash = $1 OR phone_hash = $2` +
+        (emailHash ? " OR email_hash = $3" : ""),
+      emailHash
+        ? [nationalIdHash, phoneHash, emailHash]
+        : [nationalIdHash, phoneHash],
+    );
+
+    if (existing.rows.length > 0) {
+      throw new AppError(
+        "User with this National ID, email, or phone already exists",
+        409,
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+
+    const encryptedNationalId = encrypt(data.nationalId);
+    const encryptedPhone = encrypt(data.phoneNumber);
+    const encryptedEmail = data.email ? encrypt(data.email) : null;
+
+    const result = await pool.query(
+      `INSERT INTO users (full_name, phone, email, national_id, password_hash, role,
+                          phone_hash, national_id_hash, email_hash)
+       VALUES ($1, $2, $3, $4, $5, 'taxpayer', $6, $7, $8)
+       RETURNING id, full_name, role`,
+      [
+        `${data.firstName} ${data.lastName}`,
+        encryptedPhone,
+        encryptedEmail,
+        encryptedNationalId,
+        passwordHash,
+        phoneHash,
+        nationalIdHash,
+        emailHash,
+      ],
+    );
+
+    const user = result.rows[0];
+
+    await insertAuditLog({
+      userId: user.id,
+      action: "REGISTRATION",
+      entity: "users",
+      entityId: user.id,
+      metadata: {
+        ip_address: data.ipAddress,
+        user_agent: data.userAgent,
+        verification_id: data.stripeVerificationId,
+      },
+    });
+
+    logger.info("New user registered (unverified)", { id: user.id });
+
+    return {
+      id: user.id,
+      fullName: user.full_name,
+      role: user.role,
     };
   }
 
@@ -157,10 +245,7 @@ export class AuthService {
     const user = result.rows[0];
 
     if (user.lock_until && new Date(user.lock_until) > new Date()) {
-      throw new AppError(
-        "Account temporarily locked. Please try again later.",
-        403,
-      );
+      throw new AppError("Authentication failed", 403);
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
@@ -186,6 +271,13 @@ export class AuthService {
       throw new AppError("Invalid credentials", 401);
     }
 
+    if (!user.email_verified && !user.phone_verified) {
+      throw new AppError(
+        "Account not verified. Please verify your email or phone.",
+        403,
+      );
+    }
+
     await pool.query(
       "UPDATE users SET failed_attempts = 0, lock_until = NULL WHERE id = $1",
       [user.id],
@@ -195,7 +287,6 @@ export class AuthService {
     user.national_id = decrypt(user.national_id);
     if (user.email) user.email = decrypt(user.email);
 
-    // ✅ role added
     const tokens = this.generateTokens(
       user.id,
       user.token_version,
@@ -218,16 +309,11 @@ export class AuthService {
       metadata: { ip_address: ipAddress, user_agent: userAgent },
     });
 
-    const { password_hash, refresh_token_hash, ...safeUser } = user;
-
     return {
       user: {
-        id: safeUser.id,
-        fullName: safeUser.full_name,
-        email: safeUser.email,
-        phone: safeUser.phone,
-        role: safeUser.role,
-        nationalId: safeUser.national_id,
+        id: user.id,
+        fullName: user.full_name,
+        role: user.role,
       },
       ...tokens,
     };
@@ -252,7 +338,6 @@ export class AuthService {
     try {
       await client.query("BEGIN");
 
-      // Check user and token version
       const userResult = await client.query(
         "SELECT id, token_version, role FROM users WHERE id = $1",
         [userId],
@@ -264,7 +349,6 @@ export class AuthService {
         throw new AppError("Token version mismatch – please log in again", 401);
       }
 
-      // Find matching active session
       const sessions = await client.query(
         "SELECT * FROM user_sessions WHERE user_id = $1 AND is_revoked = FALSE ORDER BY created_at DESC",
         [userId],
@@ -282,7 +366,6 @@ export class AuthService {
       }
 
       if (!matchingSession) {
-        // Reuse detected → revoke all sessions and bump version
         await client.query(
           "UPDATE user_sessions SET is_revoked = TRUE WHERE user_id = $1",
           [userId],
@@ -306,7 +389,6 @@ export class AuthService {
         );
       }
 
-      // Legitimate refresh – revoke old session and create new in same transaction
       await client.query(
         "UPDATE user_sessions SET is_revoked = TRUE WHERE id = $1",
         [matchingSession.id],
@@ -365,7 +447,6 @@ export class AuthService {
     }
   }
 
-  // ✅ Updated signature – role is now a required parameter
   private generateTokens(
     userId: string,
     tokenVersion: number,
@@ -387,7 +468,7 @@ export class AuthService {
         tokenVersion,
         jti: accessJti,
         fingerprint,
-        role, // ✅ role embedded
+        role,
         keyVersion: parseInt(process.env.ACTIVE_JWT_VERSION || "1"),
       },
       env.jwt.secret,
@@ -419,7 +500,6 @@ export class AuthService {
     ]);
   }
 
-  // Session management
   async listSessions(userId: string) {
     const result = await pool.query(
       `SELECT id, ip, user_agent, is_revoked, created_at
@@ -448,5 +528,93 @@ export class AuthService {
       `UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = $1`,
       [userId],
     );
+  }
+
+  async getProfile(userId: string) {
+    const user = await pool.query(
+      `SELECT id, full_name, role, email_verified, phone_verified, created_at
+     FROM users WHERE id = $1`,
+      [userId],
+    );
+    if (user.rows.length === 0) throw new AppError("User not found", 404);
+
+    const u = user.rows[0];
+
+    const profile = await pool.query(
+      `SELECT region, district, occupation FROM taxpayer_profiles WHERE user_id = $1`,
+      [userId],
+    );
+
+    return {
+      id: u.id,
+      fullName: u.full_name,
+      role: u.role,
+      emailVerified: u.email_verified,
+      phoneVerified: u.phone_verified,
+      memberSince: u.created_at,
+      region: profile.rows[0]?.region || null,
+      district: profile.rows[0]?.district || null,
+      occupation: profile.rows[0]?.occupation || null,
+    };
+  }
+
+  async forgotPassword(identifier: string, type: "email" | "phone") {
+    const hash = hashField(identifier);
+
+    let user;
+    if (type === "email") {
+      user = await pool.query(
+        "SELECT id, email, phone FROM users WHERE email_hash = $1",
+        [hash],
+      );
+    } else {
+      user = await pool.query(
+        "SELECT id, email, phone FROM users WHERE phone_hash = $1",
+        [hash],
+      );
+    }
+
+    if (user.rows.length === 0) return;
+
+    const userId = user.rows[0].id;
+    const contact = type === "email" ? user.rows[0].email : user.rows[0].phone;
+    if (!contact) return;
+
+    const code = crypto.randomInt(100000, 999999).toString();
+    const hashedCode = await bcrypt.hash(code, BCRYPT_ROUNDS);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await pool.query(
+      `INSERT INTO otp_codes (user_id, code, type, expires_at) VALUES ($1, $2, $3, $4)`,
+      [userId, hashedCode, type, expiresAt],
+    );
+
+    if (process.env.NODE_ENV === "development") {
+      logger.info(`[DEV PASSWORD RESET] ${type}: ${contact} -> ${code}`);
+    } else {
+      if (type === "email") {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || "587"),
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM,
+          to: contact,
+          subject: "DalPay Password Reset",
+          text: `Your password reset code is: ${code}`,
+        });
+      }
+    }
+  }
+
+  async updatePassword(userId: string, newPassword: string) {
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2',
+      [passwordHash, userId]
+    );
+    await this.revokeAllSessions(userId);
+    logger.info('Password changed', { userId });
   }
 }

@@ -63,6 +63,16 @@ Pay taxes via mobile money (Zaad / eDahab / Nomad) | Real-time fraud detection |
     - [1.6.14 - Row‑Level Security (RLS) with Role Awareness](#1614---rowlevel-security-rls-with-role-awareness)
     - [1.6.15 - USSD Session Persistence (Redis)](#1615---ussd-session-persistence-redis)
     - [Additional Security Measures](#additional-security-measures)
+    - [1.6.16 – Strict Input Validation (Zod)](#1616--strict-input-validation-zod)
+    - [1.6.17 – Turnstile CAPTCHA Integration](#1617--turnstile-captcha-integration)
+    - [1.6.18 – OTP Hardening (Hashing, Cooldown, Single‑Use)](#1618--otp-hardening-hashing-cooldown-singleuse)
+    - [1.6.19 – HttpOnly Refresh Tokens (Cookie‑Based)](#1619--httponly-refresh-tokens-cookiebased)
+    - [1.6.20 – Content Security Policy (CSP) Hardening](#1620--content-security-policy-csp-hardening)
+    - [1.6.21 – Production Error Sanitization](#1621--production-error-sanitization)
+    - [1.6.22 – Ownership Enforcement (IDOR Prevention)](#1622--ownership-enforcement-idor-prevention)
+    - [1.6.23 – Dynamic Payment Providers](#1623--dynamic-payment-providers)
+    - [1.6.24 – Verification‑Gated Activation](#1624--verificationgated-activation)
+    - [1.6.25 – Anti‑Enumeration Measures](#1625--antienumeration-measures)
   - [1.7 - USSD System](#17---ussd-system)
     - [1.7.1 - Architecture](#171---architecture)
     - [1.7.2 - Request Format](#172---request-format)
@@ -138,40 +148,64 @@ The system is built with enterprise-grade security, complying with PCI-DSS, OWAS
 ```
 DalPay/
 ├── app/
-│   ├── backend/                  # Express API server
+│   ├── backend/                     # Express API server
 │   │   ├── src/
 │   │   │   ├── modules/
-│   │   │   │   ├── auth/         # Authentication + Stripe Identity
-│   │   │   │   ├── tax/          # Tax assessments, disputes, rules, ledger
-│   │   │   │   ├── payment/      # Payment initiation, confirmation, history
+│   │   │   │   ├── auth/            # Authentication, OTP, Stripe Identity
+│   │   │   │   │   ├── register.schema.ts  # Zod validation schema
+│   │   │   │   │   ├── auth.service.ts
+│   │   │   │   │   ├── auth.controller.ts
+│   │   │   │   │   ├── otp.service.ts
+│   │   │   │   │   └── auth.routes.ts
+│   │   │   │   ├── tax/            # Tax assessments, disputes, rules, ledger
+│   │   │   │   ├── payment/        # Payment initiation, confirmation, history
 │   │   │   │   ├── reconciliation/
-│   │   │   │   ├── documents/    # Upload & admin verification
-│   │   │   │   ├── dashboard/    # Admin statistics
-│   │   │   │   ├── fraud/        # Rule-based + Gemini AI fraud analysis
-│   │   │   │   ├── ussd/         # USSD session engine
-│   │   │   │   ├── notification/ # Email/SMS notifications
-│   │   │   │   └── ledger/       # Double-entry accounting
-│   │   │   ├── middleware/       # auth, RBAC, idempotency, validation, file upload
-│   │   │   ├── utils/            # errors, response, encryption, audit, logger
-│   │   │   ├── config/           # env, database
-│   │   │   ├── database/         # migrations, schema
-│   │   │   └── app.ts            # Entry point
+│   │   │   │   ├── documents/      # Upload & admin verification
+│   │   │   │   ├── dashboard/      # Admin & taxpayer dashboard
+│   │   │   │   ├── fraud/          # Rule-based + Gemini AI fraud analysis
+│   │   │   │   ├── ussd/           # USSD session engine (Redis-based)
+│   │   │   │   ├── notification/   # Email/SMS notifications
+│   │   │   │   ├── ledger/         # Double-entry accounting
+│   │   │   │   └── security/       # Alerts & monitoring
+│   │   │   ├── middleware/          # auth, RBAC, idempotency, validation, file upload
+│   │   │   │   ├── auth.ts
+│   │   │   │   ├── step-up.ts
+│   │   │   │   ├── idempotency.ts
+│   │   │   │   ├── validation.ts
+│   │   │   │   └── signature.ts
+│   │   │   ├── utils/               # Helpers: encrypt, decrypt, tokens, audit, Turnstile
+│   │   │   │   ├── encryption.ts
+│   │   │   │   ├── token.ts
+│   │   │   │   ├── turnstile.ts
+│   │   │   │   ├── audit.ts
+│   │   │   │   ├── errors.ts
+│   │   │   │   ├── response.ts
+│   │   │   │   ├── logger.ts
+│   │   │   │   └── metrics.ts
+│   │   │   ├── config/              # Environment, database
+│   │   │   │   ├── env.ts
+│   │   │   │   └── database.ts
+│   │   │   ├── database/            # Migrations & schema
+│   │   │   ├── workers/             # Background workers (outbox, fraud analysis)
+│   │   │   └── app.ts               # Express entry point
 │   │   ├── .env
 │   │   └── package.json
-│   └── web/                      # Vite React frontend
+│   └── frontend/                     # Vite React frontend
 │       ├── public/
-│       │   └── logo.png          # Application logo
+│       │   └── logo.png              # Application logo
 │       ├── src/
-│       │   ├── pages/            # Login, Register, Dashboard, USSD Simulator, etc.
+│       │   ├── pages/                # Login, Register, Dashboard, USSD Simulator, etc.
 │       │   ├── components/
-│       │   ├── services/         # API client (authApi, paymentApi, etc.)
+│       │   │   └── shared/
+│       │   │       └── TurnstileWidget.tsx
+│       │   ├── services/             # API client (authApi, paymentApi, etc.)
 │       │   └── App.tsx
 │       ├── .env
 │       └── package.json
 ├── README.md
 └── .gitignore
-```
 
+```
 The application logo is located at `app/web/public/logo.png` and is used throughout the frontend.
 
 ---
@@ -279,6 +313,17 @@ The PostgreSQL database contains the following tables and views.
 | created_at          | TIMESTAMP                | Creation timestamp                   |
 
 ### Payments
+
+**payment_providers**  
+| Column          | Type                     | Description                          |
+|-----------------|--------------------------|--------------------------------------|
+| id              | UUID (PK)                | Unique provider identifier           |
+| provider_id     | VARCHAR(50) UNIQUE       | Short code (e.g., "zaad", "edahab") |
+| provider_name   | VARCHAR(100)             | Display name (e.g., "Zaad")          |
+| api_url         | VARCHAR(255)             | Provider API base URL (optional)     |
+| api_key         | TEXT                     | API key for the provider (optional)  |
+| is_active       | BOOLEAN                  | Whether the provider is enabled      |
+| created_at      | TIMESTAMPTZ              | Creation timestamp                   |
 
 **payments**  
 | Column              | Type                     | Description                          |
@@ -765,6 +810,146 @@ USSD sessions are stored in Redis with a 5‑minute TTL, ensuring that sessions 
 - **Disable `x-powered-by`**: Express signature hidden to avoid fingerprinting.
 - **CORS**: Strictly whitelisted origins with credentials support.
 - **Audit log integrity**: The hash‑chain ensures logs are append‑only and cannot be silently altered.
+
+### 1.6.16 – Strict Input Validation (Zod)
+
+All registration data is validated server‑side using a strict Zod schema.  
+The schema enforces:
+
+- National ID format `SL-XXXX-XXX`
+- Phone number format `+2526XXXXXXXX`
+- Password strength minimum 12 characters, uppercase, lowercase, number, and symbol
+- Date of birth cannot be in the future and must be at least 18 years
+- Enumerated fields (gender, region, ID type, etc.)
+- `.strict()` reject any unknown fields, preventing mass‑assignment attacks like `role: admin`
+
+**Files:**
+- `src/modules/auth/register.schema.ts`
+- `src/modules/auth/auth.controller.ts` – `register()`
+
+---
+
+### 1.6.17 – Turnstile CAPTCHA Integration
+
+Cloudflare Turnstile is used to protect the registration and login forms against automated bots.  
+The backend verifies the Turnstile token server‑side before processing the request.
+
+- A dedicated Turnstile widget component is rendered on the registration page.
+- The backend either verifies the token against Cloudflare’s API or skips verification in development if the secret key is not configured.
+- In production, the token is required; otherwise the request is rejected.
+
+**Files:**
+- `src/utils/turnstile.ts` – `verifyTurnstile()`
+- `src/modules/auth/auth.controller.ts` – `register()`
+- `frontend/src/components/shared/TurnstileWidget.tsx`
+
+---
+
+### 1.6.18 – OTP Hardening (Hashing, Cooldown, Single‑Use)
+
+OTP codes are no longer stored in plaintext. Instead, they are hashed with bcrypt before being inserted into the database.
+
+- The OTP is validated by comparing the user‑supplied code with the stored hash using `bcrypt.compare`.
+- A **60‑second cooldown** is enforced between OTP resends to slow down flooding attacks.
+- After successful verification, the OTP row is immediately marked as used (single‑use), preventing replay.
+- The existing global rate limiting further limits the number of verification attempts.
+
+**Files:**
+- `src/modules/auth/otp.service.ts`
+- Database: `otp_codes`
+
+---
+
+### 1.6.19 – HttpOnly Refresh Tokens (Cookie‑Based)
+
+Refresh tokens are no longer returned in the JSON response body. Instead, they are set as **HttpOnly**, **Secure** (in production), **SameSite=Strict** cookies.
+
+- The cookie is automatically sent by the browser on every request to the auth routes, making it inaccessible to JavaScript.
+- The `/refresh-token` endpoint reads the refresh token from the cookie rather than the request body.
+- On logout, the cookie is cleared.
+- Access tokens remain short‑lived and are returned in the response body for the frontend to store in memory only.
+
+**Files:**
+- `src/modules/auth/auth.controller.ts` – `login()`, `refreshToken()`, `verifyOtp()`, `logout()`
+- `src/app.ts` – `cookie-parser` middleware
+
+---
+
+### 1.6.20 – Content Security Policy (CSP) Hardening
+
+The original Helmet‑generated CSP injected a nonce that broke the Turnstile widget. The CSP is now set manually with a strict policy that:
+
+- Allows scripts only from `'self'`, `challenges.cloudflare.com`, and `blob:`
+- Permits the exact Turnstile inline script via its SHA‑256 hash (`'sha256-eJGI0Ik4oYe/...'`)
+- Allows `'unsafe-eval'` for the Turnstile Web Worker
+- Retains `'unsafe-inline'` only for styles (required by the React frontend)
+- Disallows all object sources (`'none'`)
+
+No nonce is used, eliminating the `about:srcdoc` CSP violation errors.
+
+**Files:**
+- `src/app.ts` – custom CSP middleware
+
+---
+
+### 1.6.21 – Production Error Sanitization
+
+In production, the global error handler now hides internal details from the client. Non‑operational errors (5xx) return a generic `"Request failed"` message, while operational errors (4xx) still return their intended message. This prevents leakage of stack traces, database error codes, and other reconnaissance data.
+
+**Files:**
+- `src/app.ts` – global error handler
+
+---
+
+### 1.6.22 – Ownership Enforcement (IDOR Prevention)
+
+All endpoints that access user‑specific resources (assessments, payments, documents, sessions) now explicitly verify that the authenticated user is the owner of the resource. This is done by filtering database queries with `WHERE user_id = $1` and, where an ID is provided, `WHERE id = $2 AND user_id = $1`.
+
+Examples:
+- Payment initiation validates that the assessment belongs to the authenticated user.
+- Payment status/history queries always filter by `user_id`.
+- Tax assessments, disputes, and documents all enforce ownership via the userId extracted from the access token.
+
+**Files:**
+- `src/modules/payment/payment.service.ts`
+- `src/modules/tax/tax.service.ts`
+- `src/modules/documents/documents.controller.ts`
+- `src/modules/auth/auth.controller.ts` – session endpoints
+
+---
+
+### 1.6.23 – Dynamic Payment Providers
+
+Mobile money providers are no longer hardcoded. They are stored in a new `payment_providers` database table, allowing activation, deactivation, and configuration without deploying code. The payment initiation endpoint validates that the requested provider exists and is active, preventing the use of non‑existent or disabled providers.
+
+**Files:**
+- `src/modules/payment/payment.service.ts` – `getProviders()`, `initiatePayment()`
+- Database: `payment_providers`
+
+---
+
+### 1.6.24 – Verification‑Gated Activation
+
+User accounts are created in an unverified state. Login is blocked until at least one contact (email or phone) has been verified. Tokens are only issued on the **first** successful OTP verification for a given contact type. This ensures that an attacker cannot obtain authenticated access immediately after registration.
+
+**Files:**
+- `src/modules/auth/auth.service.ts` – `registerUnverified()`, `login()`
+- `src/modules/auth/otp.service.ts` – `verifyOtp()`
+- `src/modules/auth/auth.controller.ts` – `register()`, `verifyOtp()`
+
+---
+
+### 1.6.25 – Anti‑Enumeration Measures
+
+To prevent user enumeration, sensitive responses have been normalised:
+
+- The OTP send endpoint always returns `"If eligible, an OTP has been sent."` regardless of whether the user exists, the contact is missing, or it is already verified.
+- The login endpoint returns a generic `"Authentication failed"` for locked accounts instead of revealing the lock reason.
+- The locked‑out state is logged internally for security monitoring.
+
+**Files:**
+- `src/modules/auth/otp.service.ts` – `sendOtp()`
+- `src/modules/auth/auth.service.ts` – `login()`
 
 ## 1.7 - USSD System
 

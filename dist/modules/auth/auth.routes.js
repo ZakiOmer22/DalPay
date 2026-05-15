@@ -18,5 +18,8 @@ router.get('/verification/status/:sessionId', authController.checkVerificationSt
 router.get('/sessions', auth_1.authenticate, authController.getSessions);
 router.delete('/sessions/:sessionId', auth_1.authenticate, authController.revokeSession);
 router.delete('/sessions', auth_1.authenticate, authController.revokeAllSessions);
+router.get('/profile', auth_1.authenticate, authController.getProfile);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
 exports.default = router;
 //# sourceMappingURL=auth.routes.js.map

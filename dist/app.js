@@ -12,6 +12,7 @@ const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const express_slow_down_1 = __importDefault(require("express-slow-down"));
 const hpp_1 = __importDefault(require("hpp"));
 const morgan_1 = __importDefault(require("morgan"));
+const cookie_parser_1 = __importDefault(require("cookie-parser")); // <-- NEW
 const env_1 = require("./config/env");
 const auth_routes_1 = __importDefault(require("./modules/auth/auth.routes"));
 const tax_routes_1 = __importDefault(require("./modules/tax/tax.routes"));
@@ -26,24 +27,15 @@ const logger_1 = __importDefault(require("./utils/logger"));
 const metrics_1 = require("./utils/metrics");
 const database_1 = __importDefault(require("./config/database"));
 const ledger_routes_1 = __importDefault(require("./modules/ledger/ledger.routes"));
+const admin_routes_1 = require("./modules/admin/admin.routes");
+const audit_routes_1 = __importDefault(require("./modules/audit/audit.routes"));
+const notification_routes_1 = __importDefault(require("./modules/notification/notification.routes"));
 const app = (0, express_1.default)();
 // ==================== TRUST PROXY ====================
 app.set('trust proxy', 1);
-// ==================== SECURITY MIDDLEWARE ====================
-app.use((0, helmet_1.default)());
-app.use(helmet_1.default.contentSecurityPolicy({
-    directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-    },
-}));
+// ==================== SECURITY HEADERS ====================
+// We must NOT use helmet() or helmet.contentSecurityPolicy – those inject a nonce.
+// Instead, we apply every header individually and set CSP manually.
 app.use(helmet_1.default.crossOriginEmbedderPolicy({ policy: 'require-corp' }));
 app.use(helmet_1.default.crossOriginOpenerPolicy({ policy: 'same-origin' }));
 app.use(helmet_1.default.crossOriginResourcePolicy({ policy: 'same-origin' }));
@@ -57,6 +49,23 @@ app.use(helmet_1.default.originAgentCluster());
 app.use(helmet_1.default.permittedCrossDomainPolicies({ permittedPolicies: 'none' }));
 app.use(helmet_1.default.referrerPolicy({ policy: 'strict-origin-when-cross-origin' }));
 app.use(helmet_1.default.xssFilter());
+// ==================== CUSTOM CONTENT SECURITY POLICY (NO NONCE) ====================
+// This is the ONLY CSP header we send – Turnstile required sources + hash.
+app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', "default-src 'self'; " +
+        "script-src 'self' https://challenges.cloudflare.com blob: " +
+        "'sha256-eJGI0Ik4oYe/PKLDOt4wcN76wYs8h+Ew05pMzdY6xG8=' 'unsafe-eval'; " +
+        "worker-src 'self' blob: https://challenges.cloudflare.com; " +
+        "child-src 'self' blob: https://challenges.cloudflare.com; " +
+        "frame-src 'self' https://challenges.cloudflare.com; " +
+        "connect-src 'self' https://challenges.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: https:; " +
+        "font-src 'self'; " +
+        "object-src 'none'; " +
+        "media-src 'self'");
+    next();
+});
 // ==================== CORS ====================
 const allowedOrigins = [
     'http://localhost:5173',
@@ -79,13 +88,10 @@ app.use((0, cors_1.default)({
     maxAge: 86400,
 }));
 // ==================== RATE LIMITING & DDOS PROTECTION ====================
-// Global rate limiter – uses userId if available, otherwise falls back to req.ip (IPv6 safe)
 app.use('/api/', (0, express_rate_limit_1.default)({
     windowMs: env_1.env.rateLimit.windowMs,
     max: env_1.env.rateLimit.max,
     keyGenerator: (req) => {
-        // Use the library's built-in ipKeyGenerator to correctly normalise IPv6 addresses
-        // This prevents bypassing the limit on IPv6 connections
         const ip = req.rateLimit?.ipKeyGenerator?.(req) ?? req.ip;
         return req.user?.userId || ip;
     },
@@ -113,6 +119,7 @@ app.use('/api/v1/payment/initiate', (0, express_rate_limit_1.default)({
 // ==================== BODY PARSER ====================
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
+app.use((0, cookie_parser_1.default)()); // <-- NEW
 // ==================== HTTP PARAMETER POLLUTION PROTECTION ====================
 app.use((0, hpp_1.default)());
 // ==================== HIDE EXPRESS SIGNATURES ====================
@@ -120,7 +127,6 @@ app.disable('x-powered-by');
 // ==================== REQUEST LOGGING ====================
 app.use((0, morgan_1.default)(':remote-addr - :remote-user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] - :response-time ms'));
 // ==================== ROUTES ====================
-// Health check (public)
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -129,9 +135,7 @@ app.get('/health', (req, res) => {
         environment: env_1.env.nodeEnv,
     });
 });
-// Serve uploaded files
 app.use('/uploads', express_1.default.static(path_1.default.resolve(__dirname, '../uploads')));
-// Prometheus metrics endpoint
 app.get('/metrics', async (req, res) => {
     const key = req.headers['x-metrics-key'];
     if (key !== process.env.METRICS_KEY) {
@@ -147,7 +151,6 @@ app.get('/metrics', async (req, res) => {
         res.status(500).json({ error: 'Failed to collect metrics' });
     }
 });
-// API v1 routes
 app.use('/api/v1/auth', auth_routes_1.default);
 app.use('/api/v1/tax', tax_routes_1.default);
 app.use('/api/v1/payment', payment_routes_1.default);
@@ -157,12 +160,13 @@ app.use('/api/v1/dashboard', dashboard_routes_1.default);
 app.use('/api/v1/fraud', fraud_routes_1.default);
 app.use('/api/v1/documents', documents_routes_1.default);
 app.use('/api/v1/ledger', ledger_routes_1.default);
+app.use('/api/v1/admin', admin_routes_1.adminRoutes);
+app.use('/api/v1/audit', audit_routes_1.default);
+app.use('/api/v1/notification', notification_routes_1.default);
 // ==================== ERROR HANDLING ====================
-// 404 handler
 app.use((req, res) => {
     (0, response_1.errorResponse)(res, 'Route not found', 404, undefined, 'NOT_FOUND', req.path);
 });
-// Global error handler
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || 500;
     const code = err.code || 'INTERNAL_ERROR';

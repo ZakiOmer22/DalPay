@@ -9,12 +9,14 @@ export declare class USSDService {
     }>;
     private startNewSession;
     private handleState;
+    private handleEnterPhone;
     private handleMainMenu;
     private getBalanceText;
     private handleCheckBalance;
     private handlePayTaxSelectType;
+    private handlePayTaxSelectProvider;
     private handlePayTaxEnterAmount;
-    private handlePayTaxConfirm;
+    private handlePayTaxEnterPin;
     private getStatementText;
     private handleStatement;
     private generateSessionId;
