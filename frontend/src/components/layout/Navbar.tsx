@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Menu, X, ChevronDown, Smartphone, LogOut, Sun, Moon,
-  User, LayoutDashboard, Settings, ShieldAlert,
+  User, LayoutDashboard, ShieldAlert,
 } from "lucide-react";
 import { clearTokens } from "@/services/api";
 
@@ -223,6 +223,11 @@ export function Navbar() {
                   Contact
                 </Link>
               </li>
+              <li>
+                <Link to="/ussd" className="px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                  USSD Simulator
+                </Link>
+              </li>
             </ul>
 
             <div className="flex items-center gap-2">
@@ -287,13 +292,6 @@ export function Navbar() {
                         className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
                       >
                         <User size={16} /> Profile
-                      </Link>
-                      <Link
-                        to="/settings"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:text-[#0F7B8C] dark:hover:text-primary-light hover:bg-gray-50 dark:hover:bg-gray-700/60"
-                      >
-                        <Settings size={16} /> Settings
                       </Link>
                       <div className="border-t border-gray-100 dark:border-gray-700 mt-1 pt-1">
                         <button

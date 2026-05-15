@@ -1,10 +1,11 @@
 /* ─── src/pages/USSDSimulatorPage.tsx ─── */
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   ShieldCheck, ArrowRight, Smartphone, Clock, BadgeCheck,
   Zap, Globe, Star, ChevronRight,
   Lock, Server, Cpu, MonitorSmartphone, Hash, Send, XCircle, Phone,
+  X, Check,
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
@@ -93,106 +94,144 @@ function TrustBadges() {
 }
 
 /* ─────────────────────────────────────────────
-   3. USSD Simulator (redesigned layout)
+   3. USSD Simulator – interactive with backend
    ──────────────────────────────────────────── */
 function USSDSimulator() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [shortCode, setShortCode] = useState("*888#"); // default
+  const [sessionId, setSessionId] = useState("");
+  const [messages, setMessages] = useState<{ text: string; from: "user" | "system" }[]>([]);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<
-    { type: "system" | "user" | "response"; text: string }[]
-  >([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pin, setPin] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState("");
-  const [showKeypad, setShowKeypad] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const startSession = async (code: string) => {
-    const trimmed = code.trim();
-    if (!trimmed) return;
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Normalise phone number: prepend '+' if it starts with '252'
+  const normalisePhone = (num: string) => {
+    const trimmed = num.trim();
+    if (trimmed.startsWith("252")) return "+" + trimmed;
+    return trimmed;
+  };
+
+  // Check if a shortcode looks valid
+  const isValidShortCode = (code: string) => {
+    return code.startsWith("*") && code.endsWith("#") && code.length >= 3;
+  };
+
+  const sendUSSD = async (text: string) => {
     setIsProcessing(true);
-    setError("");
     try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      const res = await fetch("/api/v1/ussd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phoneNumber: normalisePhone(phoneNumber),
+          text,
+          sessionId: sessionId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const resp = data.data;
+        setSessionId(resp.sessionId);
+        setMessages((prev) => [...prev, { text: resp.response, from: "system" }]);
 
-      if (trimmed === "*888#" || trimmed === "*123#" || trimmed === "*800#") {
-        setSessionId("mock-session-001");
-        setMessages([
-          { type: "user", text: trimmed },
-          {
-            type: "response",
-            text: "Welcome to DalPay USSD Service\n1. Check Balance\n2. Pay Tax\n3. Statement\n4. Exit",
-          },
-        ]);
-        setShowKeypad(true);
+        // Auto‑reply with phone number when backend asks for it
+        if (
+          !resp.end &&
+          resp.response.toLowerCase().includes("phone") &&
+          resp.response.toLowerCase().includes("enter")
+        ) {
+          // Give a tiny delay so the user can read the prompt, then auto‑send the number
+          setTimeout(() => {
+            const pn = normalisePhone(phoneNumber);
+            setMessages((prev) => [...prev, { text: pn, from: "user" }]);
+            sendUSSD(pn);
+          }, 1200);
+          setIsProcessing(false);
+          return;
+        }
+
+        // Show PIN modal if the response asks for a PIN
+        if (resp.response.includes("Enter your") && resp.response.includes("PIN")) {
+          setShowPinModal(true);
+        }
+
+        if (resp.end) {
+          setSessionEnded(true);
+          setIsConnected(false);
+        }
       } else {
-        setError("Invalid USSD code. Try *888#, *123#, or *800#");
+        // Backend error – show message in phone screen
+        setMessages((prev) => [...prev, { text: data.message || "USSD error", from: "system" }]);
+        setSessionEnded(true);
+        setIsConnected(false);
       }
     } catch (err) {
-      console.error(err);
-      setError("Connection error. Please try again.");
+      setMessages((prev) => [...prev, { text: "Connection failed. Please try again.", from: "system" }]);
+      setSessionEnded(true);
+      setIsConnected(false);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const sendChoice = async (choice: string) => {
-    if (!sessionId) return;
-
-    setIsProcessing(true);
-    setError("");
-    try {
-      setMessages((prev) => [...prev, { type: "user", text: choice }]);
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      let responseText = "";
-      if (choice === "1") {
-        responseText =
-          "Your Current Tax Balance:\nIncome Tax: 0 SOS\nBusiness Tax: 0 SOS\nProperty Tax: 0 SOS\n0. Back";
-      } else if (choice === "2") {
-        responseText =
-          "Select Tax Type:\n1. Income Tax\n2. Business Tax\n3. Property Tax\n0. Back";
-      } else if (choice === "1.1" || choice === "2.1" || choice === "3.1") {
-        responseText = "Enter Amount (SOS):\n0. Cancel";
-      } else if (choice === "0") {
-        responseText =
-          "Welcome to DalPay USSD Service\n1. Check Balance\n2. Pay Tax\n3. Statement\n4. Exit";
-      } else if (choice === "4") {
-        responseText = "Thank you for using DalPay. Goodbye.";
-        setSessionId(null);
-        setShowKeypad(false);
-      } else {
-        responseText =
-          "Invalid option. Please try again.\n1. Check Balance\n2. Pay Tax\n3. Statement\n4. Exit";
-      }
-
-      setMessages((prev) => [...prev, { type: "response", text: responseText }]);
-    } catch (err) {
-      console.error(err);
-      setError("Connection error. Please try again.");
-    } finally {
-      setIsProcessing(false);
+  const handleDial = async () => {
+    // Validate shortcode
+    if (!isValidShortCode(shortCode)) {
+      alert("Invalid shortcode. It must start with * and end with # (e.g., *888#)");
+      return;
     }
-  };
-
-  const handleCall = () => {
-    if (sessionId) {
-      sendChoice(input);
-    } else {
-      startSession(input);
+    // Validate phone number
+    if (!phoneNumber.trim()) {
+      alert("Please enter a phone number.");
+      return;
     }
-    setInput("");
-  };
 
-  const handleKeypadPress = (value: string) => {
-    setInput((prev) => prev + value);
-  };
-
-  const endSession = () => {
-    setSessionId(null);
     setMessages([]);
+    setSessionId("");
+    setSessionEnded(false);
+    setIsConnected(true);
+    setShowPinModal(false);
+    setPin("");
+    await sendUSSD(shortCode.trim());
+  };
+
+  const handleSend = () => {
+    if (!input.trim() || sessionEnded) return;
+    setMessages((prev) => [...prev, { text: input.trim(), from: "user" }]);
+    const textToSend = input.trim();
     setInput("");
-    setError("");
-    setShowKeypad(false);
+    sendUSSD(textToSend);
+  };
+
+  const handlePinSubmit = () => {
+    if (pin.length !== 4) return;
+    setShowPinModal(false);
+    setMessages((prev) => [...prev, { text: "●●●●", from: "user" }]);
+    sendUSSD(pin);
+    setPin("");
+  };
+
+  const resetSimulator = () => {
+    setIsConnected(false);
+    setSessionEnded(false);
+    setMessages([]);
+    setSessionId("");
+    setInput("");
+    setShowPinModal(false);
+    setPin("");
   };
 
   return (
@@ -206,147 +245,205 @@ function USSDSimulator() {
             USSD <span className="text-[#0F7B8C]">Simulator</span>
           </h2>
           <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">
-            Dial *888# and experience how DalPay works on any phone.
+            Dial a shortcode and navigate the menu – just like on a real phone.
           </p>
         </div>
 
-        {/* Two-column layout: left panel (controls) + right panel (phone) */}
         <div className="flex flex-col lg:flex-row items-start justify-center gap-10 lg:gap-16">
-          
-          {/* ─── LEFT PANEL: Instructions + USSD Code + Keypad ─── */}
+          {/* LEFT PANEL */}
           <div className="w-full lg:w-1/2 max-w-md space-y-6">
             <div className="bg-gray-50 dark:bg-[#111627] border border-gray-200 dark:border-gray-700 rounded-2xl p-6">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                How it works
-              </h3>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">How it works</h3>
               <ol className="space-y-3 text-gray-600 dark:text-gray-400">
                 <li className="flex gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#0F7B8C] text-white flex items-center justify-center text-sm font-bold">1</span>
-                  <span>Enter a USSD code (try <code className="bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[#0F7B8C]">*888#</code>)</span>
+                  <span>Enter a registered phone number and a USSD code (like <code className="bg-gray-200 dark:bg-gray-800 px-1.5 py-0.5 rounded text-[#0F7B8C]">*888#</code>)</span>
                 </li>
                 <li className="flex gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#0F7B8C] text-white flex items-center justify-center text-sm font-bold">2</span>
-                  <span>Press the <strong>Call</strong> button</span>
+                  <span>Press <strong>Dial</strong> – the simulator will auto‑answer if asked for your number.</span>
                 </li>
                 <li className="flex gap-3">
                   <span className="flex-shrink-0 w-7 h-7 rounded-full bg-[#0F7B8C] text-white flex items-center justify-center text-sm font-bold">3</span>
-                  <span>Use the keypad to navigate the USSD menu</span>
+                  <span>Navigate the menu and confirm payments with your PIN.</span>
                 </li>
               </ol>
             </div>
 
-            {/* USSD Code Input + Call Button */}
             <div className="bg-white dark:bg-[#111627] border-2 border-[#0F7B8C]/20 rounded-2xl p-5">
+              {/* Phone number input */}
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                USSD Code
+                Phone Number
               </label>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleCall(); }}
-                  placeholder="*888#"
-                  className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 text-lg font-mono text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-[#0F7B8C] focus:border-transparent"
-                />
-                <button
-                  onClick={handleCall}
-                  disabled={isProcessing}
-                  className="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white font-bold px-5 py-3 rounded-xl transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl"
-                >
-                  <Phone size={20} />
-                  <span>Call</span>
-                </button>
-              </div>
-              {error && <p className="mt-2 text-red-500 text-sm">{error}</p>}
-            </div>
+              <input
+                type="text"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                disabled={isConnected || sessionEnded}
+                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white mb-3 disabled:opacity-50"
+                placeholder="e.g. +252612345678"
+              />
 
-            {/* Keypad (only shown after session starts) */}
-            {(showKeypad || sessionId) && (
-              <div className="bg-white dark:bg-[#111627] border border-gray-200 dark:border-gray-700 rounded-2xl p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-semibold text-gray-900 dark:text-white">Keypad</h4>
-                  {sessionId && (
-                    <button
-                      onClick={endSession}
-                      className="text-red-500 hover:text-red-600 text-sm font-medium flex items-center gap-1"
-                    >
-                      <XCircle size={16} /> End Call
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => handleKeypadPress(key)}
-                      disabled={!sessionId && !showKeypad}
-                      className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl py-3 text-center text-lg font-bold text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {key}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-4 flex gap-2">
+              {/* Shortcode input */}
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                USSD Shortcode
+              </label>
+              <input
+                type="text"
+                value={shortCode}
+                onChange={(e) => setShortCode(e.target.value)}
+                disabled={isConnected || sessionEnded}
+                className={`w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 border rounded-xl text-gray-900 dark:text-white mb-1 disabled:opacity-50 ${
+                  shortCode && !isValidShortCode(shortCode)
+                    ? "border-red-400 focus:ring-red-500"
+                    : "border-gray-300 dark:border-gray-600"
+                }`}
+                placeholder="*888#"
+              />
+              {shortCode && !isValidShortCode(shortCode) && (
+                <p className="text-xs text-red-500 mb-3">Shortcode must start with * and end with #</p>
+              )}
+
+              {!isConnected && !sessionEnded ? (
+                <button
+                  onClick={handleDial}
+                  disabled={!isValidShortCode(shortCode) || !phoneNumber.trim()}
+                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                >
+                  <Phone size={20} /> Dial {shortCode || "*888#"}
+                </button>
+              ) : sessionEnded ? (
+                <button
+                  onClick={resetSimulator}
+                  className="w-full bg-[#0F7B8C] hover:bg-[#0A5D6B] text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  <Phone size={20} /> Dial Again
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                    placeholder="Type response..."
+                    className="flex-1 px-4 py-3 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white"
+                  />
                   <button
-                    onClick={handleCall}
+                    onClick={handleSend}
                     disabled={isProcessing}
-                    className="flex-1 bg-[#0F7B8C] hover:bg-[#0A5D6B] disabled:bg-gray-400 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                    className="px-5 py-3 bg-[#0F7B8C] hover:bg-[#0A5D6B] text-white font-bold rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50"
                   >
-                    <Send size={18} />
-                    <span>Send</span>
+                    <Send size={18} /> Send
+                  </button>
+                  <button
+                    onClick={resetSimulator}
+                    className="px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl flex items-center gap-1"
+                  >
+                    <XCircle size={18} />
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* ─── RIGHT PANEL: Larger Phone Mockup ─── */}
+          {/* RIGHT PANEL: Phone mockup (unchanged) */}
           <div className="w-full lg:w-1/2 flex justify-center lg:justify-end">
             <div className="relative w-full max-w-sm">
-              {/* Phone frame */}
               <div className="relative bg-gray-900 rounded-[48px] p-5 shadow-2xl mx-auto">
-                {/* Notch */}
                 <div className="absolute top-5 left-1/2 -translate-x-1/2 w-28 h-7 bg-gray-900 rounded-b-2xl z-10" />
-                {/* Screen */}
                 <div className="bg-black rounded-[36px] overflow-hidden aspect-[9/18] relative border-2 border-gray-700">
-                  {/* Status bar */}
                   <div className="absolute top-0 left-0 right-0 bg-black/80 text-white text-sm px-5 py-3 flex justify-between z-10">
                     <span className="font-semibold">USSD</span>
                     <span>▮▮▮▮</span>
                   </div>
-                  {/* Message area */}
                   <div className="pt-14 pb-24 px-4 text-base text-white font-mono overflow-y-auto h-full space-y-3">
                     {messages.map((msg, idx) => (
-                      <div key={idx} className={msg.type === "user" ? "text-green-400" : "text-gray-200"}>
-                        {msg.type === "user" ? "> " : ""}{msg.text.split("\n").map((line, i) => (
+                      <div key={idx} className={msg.from === "user" ? "text-green-400" : "text-gray-200"}>
+                        {msg.from === "user" ? "> " : ""}
+                        {msg.text.split("\n").map((line, i) => (
                           <span key={i}>{line}<br /></span>
                         ))}
                       </div>
                     ))}
-                    {error && <div className="text-red-400 text-sm">{error}</div>}
-                    {isProcessing && <div className="text-gray-400 text-sm animate-pulse">Processing...</div>}
-                    {!sessionId && messages.length === 0 && (
+                    {isProcessing && <div className="text-gray-400 animate-pulse">Processing...</div>}
+                    {sessionEnded && !isProcessing && (
+                      <div className="text-center text-gray-400 mt-4">
+                        Session ended. Press "Dial Again" to restart.
+                      </div>
+                    )}
+                    {!isConnected && !sessionEnded && messages.length === 0 && (
                       <div className="text-gray-500 text-center mt-20">
                         <Smartphone size={48} className="mx-auto mb-4 opacity-50" />
-                        <p className="text-lg">Enter a USSD code and press Call to begin</p>
-                        <p className="text-sm mt-2">Try: *888#</p>
+                        <p className="text-lg">Enter a phone number and shortcode then press Dial.</p>
                       </div>
                     )}
                   </div>
-                  {/* Bottom input indicator */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/90 border-t border-gray-700 px-5 py-3 flex items-center gap-2">
-                    <span className="text-green-400 font-mono text-base">{'>'}</span>
-                    <span className="text-green-400 font-mono text-base">
-                      {input || " "}
-                      <span className="inline-block w-2 h-5 bg-green-400 animate-pulse ml-0.5 align-middle" />
-                    </span>
-                  </div>
+                  {isConnected && !sessionEnded && (
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/90 border-t border-gray-700 px-5 py-3 flex items-center gap-2">
+                      <span className="text-green-400 font-mono text-base">{'>'}</span>
+                      <span className="text-green-400 font-mono text-base">
+                        {input || " "}
+                        <span className="inline-block w-2 h-5 bg-green-400 animate-pulse ml-0.5 align-middle" />
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* PIN Modal – unchanged */}
+        {showPinModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-80 shadow-2xl">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Confirm Payment</h3>
+                <button onClick={() => setShowPinModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Enter your mobile money PIN to confirm the payment.
+              </p>
+              <div className="flex justify-center gap-2 mb-4">
+                {[0, 1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-lg font-bold ${
+                      pin.length > i ? "border-green-500 bg-green-100 text-green-800" : "border-gray-300 text-gray-400"
+                    }`}
+                  >
+                    {pin[i] || "•"}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, "", 0, "x"].map((num, idx) => (
+                  <button
+                    key={idx}
+                    disabled={num === ""}
+                    onClick={() => {
+                      if (num === "x") setPin((prev) => prev.slice(0, -1));
+                      else if (pin.length < 4) setPin((prev) => prev + num);
+                    }}
+                    className="py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white font-bold text-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                  >
+                    {num === "x" ? "⌫" : num}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handlePinSubmit}
+                disabled={pin.length !== 4}
+                className="w-full py-3 bg-green-500 text-white font-bold rounded-xl disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Check size={18} /> Confirm Payment
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

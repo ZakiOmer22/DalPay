@@ -11,5 +11,8 @@ export declare class AuthController {
     getSessions(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     revokeSession(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     revokeAllSessions(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    getProfile(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
+    resetPassword(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
 }
 //# sourceMappingURL=auth.controller.d.ts.map

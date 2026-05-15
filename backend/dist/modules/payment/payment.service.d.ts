@@ -24,10 +24,28 @@ export declare class PaymentService {
     }>;
     getPaymentStatus(paymentId: string, userId: string): Promise<any>;
     getProviders(): Promise<{
+        provider_id: any;
+        provider_name: any;
+        status: string;
+        api_url: any;
+    }[]>;
+    getAllPayments(limit: number, offset: number): Promise<{
+        id: any;
+        user_id: any;
+        assessment_id: any;
+        amount: any;
+        provider: any;
+        transaction_ref: any;
+        status: any;
+        fraud_status: any;
+        created_at: any;
+    }[]>;
+    getTotalPaymentsCount(): Promise<number>;
+    /** Create a new payment provider */
+    createProvider(data: {
         provider_id: string;
         provider_name: string;
-        status: string;
-    }[]>;
+    }): Promise<any>;
     private simulateMobileMoneyCall;
 }
 //# sourceMappingURL=payment.service.d.ts.map

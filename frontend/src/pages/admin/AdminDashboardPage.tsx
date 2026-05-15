@@ -5,10 +5,10 @@ import {
   ChevronRight, TrendingUp, TrendingDown, ShieldCheck,
   Receipt, Wallet,
 } from "lucide-react";
-import { request, clearTokens } from "@/services/api";   // ★ your real API
+import { request, clearTokens } from "@/services/api";
 import toast from "react-hot-toast";
 
-// ─── Design tokens (identical to dental dashboard) ──────────────────────
+// ─── Design tokens (identical) ──────────────────────────────────────
 const C = {
   border: "#e5eae8",
   bg: "#ffffff",
@@ -38,7 +38,7 @@ const C = {
   purpleText: "#5b21b6",
 };
 
-// ─── Re‑usable primitives (exactly as you had) ─────────────────────────
+// ─── Re‑usable primitives (unchanged) ─────────────────────────────
 function Card({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", ...style }}>
@@ -148,6 +148,7 @@ function KpiCard({ label, value, sub, trend, trendUp, icon: Icon, color }: {
   );
 }
 
+// ─── DonutChart (fixed immutability) ──────────────────────────────
 function DonutChart({ segments, size = 84 }: {
   segments: { color: string; value: number; label: string }[];
   size?: number;
@@ -155,7 +156,11 @@ function DonutChart({ segments, size = 84 }: {
   const total = segments.reduce((s, d) => s + d.value, 0);
   const r = 28, cx = size / 2, cy = size / 2;
   const circumference = 2 * Math.PI * r;
-  let offset = 0;
+
+  const cumulative = segments.reduce<number[]>((acc, seg, idx) => {
+    acc.push(seg.value + (acc[idx - 1] || 0));
+    return acc;
+  }, []);
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -164,7 +169,8 @@ function DonutChart({ segments, size = 84 }: {
           const pct = seg.value / total;
           const dash = circumference * pct;
           const gap = circumference - dash;
-          const el = (
+          const offset = i === 0 ? 0 : cumulative[i - 1];
+          return (
             <circle
               key={i}
               cx={cx} cy={cy} r={r}
@@ -172,12 +178,10 @@ function DonutChart({ segments, size = 84 }: {
               stroke={seg.color}
               strokeWidth={10}
               strokeDasharray={`${dash} ${gap}`}
-              strokeDashoffset={-offset * circumference / total + circumference * 0.25}
+              strokeDashoffset={-(offset / total) * circumference + circumference * 0.25}
               style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
             />
           );
-          offset += seg.value;
-          return el;
         })}
         <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle" style={{ fontSize: 13, fontWeight: 700, fill: C.text }}>
           {total}
@@ -253,16 +257,18 @@ export default function TaxpayerDashboardPage() {
         request("/tax/assessments"),
         request("/payment/history?page=1&limit=10"),
       ]);
-      setSummary(summaryRes.data);
-      setAssessments(assessmentsRes.data || []);
-      setPayments(paymentsRes.data?.payments || []);
-    } catch (err: any) {
-      if (err.status === 401) {
+      // Type assertions because API returns unknown
+            setSummary(summaryRes.data as DashboardSummary);
+      setAssessments((assessmentsRes.data as Assessment[]) || []);
+      setPayments((paymentsRes.data as { payments: Payment[] })?.payments || []);
+    } catch (err: unknown) {
+      const error = err as { status?: number; message?: string };
+      if (error.status === 401) {
         clearTokens();
         navigate("/login", { replace: true });
         toast.error("Session expired. Please log in again.");
       } else {
-        toast.error(err.message || "Could not load dashboard data.");
+        toast.error(error.message || "Could not load dashboard data.");
       }
     } finally {
       setLoading(false);

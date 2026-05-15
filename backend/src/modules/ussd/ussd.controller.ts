@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { USSDService } from './ussd.service';
 import { successResponse } from '../../utils/response';
-import { AppError } from '../../utils/errors';
 
 const ussdService = new USSDService();
 
@@ -10,12 +9,9 @@ export class USSDController {
     try {
       const { phoneNumber, text, sessionId } = req.body;
 
-      if (!phoneNumber) {
-        throw new AppError('Phone number is required', 400);
-      }
-
+      // phoneNumber is now optional – the service will prompt for it if missing
       const result = await ussdService.processRequest(
-        phoneNumber as string,
+        phoneNumber || '',
         (text as string) || '',
         sessionId as string | undefined
       );
