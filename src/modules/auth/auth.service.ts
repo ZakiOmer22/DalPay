@@ -353,7 +353,7 @@ export class AuthService {
         "SELECT * FROM user_sessions WHERE user_id = $1 AND is_revoked = FALSE ORDER BY created_at DESC",
         [userId],
       );
-      let matchingSession = null;
+      let matchingSession: any = null;
       for (const session of sessions.rows) {
         const match = await bcrypt.compare(
           refreshToken,
