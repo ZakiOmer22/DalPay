@@ -87,9 +87,7 @@ function BarChart({ data, maxValue, height = 20 }: any) {
 }
 
 // ── Page Component ─────────────────────────────────────────────
-export default async function ReportsPage() {
-  const res = await paymentApi.getHistory(); 
-
+export default function ReportsPage() {
   // Fetch assessments
   const { data: assessmentsData } = useQuery({
     queryKey: ["assessments"],
@@ -113,7 +111,7 @@ export default async function ReportsPage() {
 
   // Normalise assessments
   const assessments = useMemo(() => {
-    const raw = res.data as Record<string, any>;
+    const raw = assessmentsData?.data as Record<string, any>;
     if (!Array.isArray(raw)) return [];
     return raw.map((item: any) => ({
       id: item.assessment_id || item.id,
@@ -127,7 +125,7 @@ export default async function ReportsPage() {
 
   // Normalise payments
   const payments = useMemo(() => {
-    const raw = res.data as Record<string, any>;
+    const raw = paymentsData?.data as Record<string, any>;
     let list: any[] = [];
     if (raw?.payments) list = raw.payments;
     else if (Array.isArray(raw)) list = raw;
@@ -143,7 +141,7 @@ export default async function ReportsPage() {
 
   // Normalise taxpayers
   const taxpayerMap = useMemo(() => {
-   const raw = res.data as Record<string, any>;
+    const raw = taxpayersData?.data as Record<string, any>;
     let list: any[] = [];
     if (Array.isArray(raw)) list = raw;
     else if (raw?.taxpayers) list = raw.taxpayers;
