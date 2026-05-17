@@ -31,7 +31,7 @@ import userRoutes from "./modules/user/user.routes";
 const app = express();
 
 // ==================== TRUST PROXY ====================
-app.set("trust proxy", 1);
+app.set("trust proxy", true);
 
 // ==================== SECURITY HEADERS ====================
 // We must NOT use helmet() or helmet.contentSecurityPolicy – those inject a nonce.
