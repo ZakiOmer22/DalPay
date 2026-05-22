@@ -14,7 +14,7 @@ const token_1 = require("../../utils/token");
 const encryption_1 = require("../../utils/encryption");
 const OTP_EXPIRY_MINUTES = 10;
 const BCRYPT_ROUNDS = 12;
-const RESEND_COOLDOWN_MS = 60000; // 60 seconds
+const RESEND_COOLDOWN_MS = 60000;
 const transporter = nodemailer_1.default.createTransport({
     host: process.env.SMTP_HOST || "smtp.ethereal.email",
     port: parseInt(process.env.SMTP_PORT || "587"),
@@ -35,50 +35,46 @@ class OtpService {
             if (!contact) {
                 return { message: "If eligible, an OTP has been sent." };
             }
+            const isDev = process.env.NODE_ENV === "development";
             const verified = type === "email"
                 ? user.rows[0].email_verified
                 : user.rows[0].phone_verified;
-            if (verified) {
+            if (!isDev && verified) {
                 return { message: "If eligible, an OTP has been sent." };
             }
-            // Cooldown: check when the last OTP of this type was sent
             const lastCode = await database_1.default.query(`SELECT created_at FROM otp_codes
          WHERE user_id = $1 AND type = $2 AND used = FALSE AND expires_at > NOW()
          ORDER BY created_at DESC LIMIT 1`, [userId, type]);
             if (lastCode.rows.length > 0) {
                 const diff = Date.now() - new Date(lastCode.rows[0].created_at).getTime();
                 if (diff < RESEND_COOLDOWN_MS) {
-                    // Still too soon – return generic message without sending a new code
                     return { message: "If eligible, an OTP has been sent." };
                 }
             }
             const code = crypto_1.default.randomInt(100000, 999999).toString();
-            const hashedCode = await bcryptjs_1.default.hash(code, BCRYPT_ROUNDS);
+            console.log(`🔐 [DEV OTP] ${type}: ${contact} -> ${code}`);
+            logger_1.default.info(`[DEV OTP] ${type}: ${contact} -> ${code}`);
+            // Store plain code in development (fits VARCHAR(6)), hash in production
+            const codeToStore = isDev ? code : await bcryptjs_1.default.hash(code, BCRYPT_ROUNDS);
             const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
             await database_1.default.query(`INSERT INTO otp_codes (user_id, code, type, expires_at)
-         VALUES ($1, $2, $3, $4)`, [userId, hashedCode, type, expiresAt]);
-            if (process.env.NODE_ENV === "development") {
-                logger_1.default.info(`[DEV OTP] ${type}: ${contact} -> ${code}`);
-            }
-            else {
-                if (type === "email") {
-                    await transporter.sendMail({
-                        from: process.env.SMTP_FROM || "noreply@dalpay.gov.so",
-                        to: contact,
-                        subject: "DalPay Verification Code",
-                        text: `Your DalPay verification code is: ${code}`,
-                    });
-                }
-                // Phone SMS integration would go here
+         VALUES ($1, $2, $3, $4)`, [userId, codeToStore, type, expiresAt]);
+            if (!isDev && type === "email") {
+                await transporter.sendMail({
+                    from: process.env.SMTP_FROM || "noreply@dalpay.gov.so",
+                    to: contact,
+                    subject: "DalPay Verification Code",
+                    text: `Your DalPay verification code is: ${code}`,
+                });
             }
         }
         catch (err) {
             logger_1.default.error("OTP send error", { err });
+            console.error("OTP send error:", err);
         }
         return { message: "If eligible, an OTP has been sent." };
     }
     async verifyOtp(userId, code, ipAddress, userAgent) {
-        // Get the most recent valid, unused OTP for this user
         const result = await database_1.default.query(`SELECT id, code, type
        FROM otp_codes
        WHERE user_id = $1 AND used = FALSE AND expires_at > NOW()
@@ -87,16 +83,16 @@ class OtpService {
             throw new errors_1.AppError("Invalid or expired OTP", 400);
         }
         const otp = result.rows[0];
-        // Compare the provided code with the stored hash
-        const match = await bcryptjs_1.default.compare(code, otp.code);
-        if (!match) {
+        const isDev = process.env.NODE_ENV === "development";
+        const isValid = isDev
+            ? otp.code === code
+            : await bcryptjs_1.default.compare(code, otp.code);
+        if (!isValid) {
             throw new errors_1.AppError("Invalid or expired OTP", 400);
         }
-        // Successful verification – mark as used (single‑use)
         await database_1.default.query("UPDATE otp_codes SET used = TRUE WHERE id = $1", [
             otp.id,
         ]);
-        // Check if this type was already verified before
         const userRes = await database_1.default.query("SELECT email_verified, phone_verified, role FROM users WHERE id = $1", [userId]);
         if (userRes.rows.length === 0)
             throw new errors_1.AppError("User not found", 400);
@@ -114,19 +110,15 @@ class OtpService {
             ]);
         }
         logger_1.default.info(`User ${userId} ${otp.type} verified`);
-        // If first verification, generate and return tokens
         if (!wasVerified) {
-            const tokens = await (0, token_1.generateAndStoreTokens)(userId, 0, // tokenVersion starts at 0
-            userRes.rows[0].role, ipAddress, userAgent);
+            const tokens = await (0, token_1.generateAndStoreTokens)(userId, 0, userRes.rows[0].role, ipAddress, userAgent);
             return tokens;
         }
         return {};
     }
     async verifyPasswordResetOtp(identifier, code) {
-        // Determine if identifier is email or phone
         const type = identifier.includes("@") ? "email" : "phone";
         const hash = (0, encryption_1.hashField)(identifier);
-        // Find the user
         let user;
         if (type === "email") {
             user = await database_1.default.query("SELECT id FROM users WHERE email_hash = $1", [
@@ -141,17 +133,16 @@ class OtpService {
         if (user.rows.length === 0)
             return { valid: false };
         const userId = user.rows[0].id;
-        // Get the latest unused OTP for this user + type
         const result = await database_1.default.query(`SELECT id, code FROM otp_codes
      WHERE user_id = $1 AND type = $2 AND used = FALSE AND expires_at > NOW()
      ORDER BY created_at DESC LIMIT 1`, [userId, type]);
         if (result.rows.length === 0)
             return { valid: false };
         const otp = result.rows[0];
-        const match = await bcryptjs_1.default.compare(code, otp.code);
+        const isDev = process.env.NODE_ENV === "development";
+        const match = isDev ? otp.code === code : await bcryptjs_1.default.compare(code, otp.code);
         if (!match)
             return { valid: false };
-        // Mark OTP as used
         await database_1.default.query("UPDATE otp_codes SET used = TRUE WHERE id = $1", [
             otp.id,
         ]);

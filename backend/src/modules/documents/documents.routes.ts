@@ -9,12 +9,12 @@ const documentsController = new DocumentsController();
 router.post('/upload', authenticate, upload.single('file'), documentsController.upload);
 router.get('/', authenticate, documentsController.getDocuments);
 router.get('/:documentId', authenticate, documentsController.getDocument);
-router.patch('/:documentId/verify', authenticate, authorize('admin', 'super_admin'), documentsController.verifyDocument);
+router.patch('/:documentId/verify', authenticate, authorize('admin', 'employee'), documentsController.verifyDocument);
 
 router.get(
   '/admin/all',
   authenticate,
-  authorize('admin', 'auditor'),
+  authorize('admin', 'auditor', 'employee'),
   (req, res, next) => documentsController.getAllDocuments(req, res, next)
 );
 

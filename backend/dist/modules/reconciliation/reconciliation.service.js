@@ -14,7 +14,7 @@ class ReconciliationService {
      * Only called from the admin controller (authenticated user).
      */
     async runDailyReconciliation(adminId, date) {
-        const reconciliationDate = date || new Date().toISOString().split('T')[0];
+        const reconciliationDate = date || new Date().toISOString().split("T")[0];
         const providersResult = await database_1.default.query(`SELECT provider_id, provider_name FROM payment_providers WHERE is_active = true`);
         const providers = providersResult.rows;
         const results = [];
@@ -41,20 +41,25 @@ class ReconciliationService {
             try {
                 await (0, audit_1.insertAuditLog)({
                     userId: adminId,
-                    action: 'RECONCILIATION_RUN',
-                    entity: 'reconciliation',
+                    action: "RECONCILIATION_RUN",
+                    entity: "reconciliation",
                     entityId: reconciliationDate,
                     metadata: { providers: providers.length },
                 });
             }
             catch (auditErr) {
-                logger_1.default.warn('Audit log write failed (non-critical)', { error: auditErr });
+                logger_1.default.warn("Audit log write failed (non-critical)", {
+                    error: auditErr,
+                });
             }
         }
-        logger_1.default.info('Daily reconciliation completed', { date: reconciliationDate, providers: providers.length });
+        logger_1.default.info("Daily reconciliation completed", {
+            date: reconciliationDate,
+            providers: providers.length,
+        });
         return {
             date: reconciliationDate,
-            status: 'success',
+            status: "success",
             total_collected: results.reduce((sum, r) => sum + r.total_collected, 0),
             total_disbursed: results.reduce((sum, r) => sum + r.total_disbursed, 0),
             discrepancies: results.reduce((sum, r) => sum + r.discrepancies, 0),
@@ -66,7 +71,7 @@ class ReconciliationService {
      */
     async getReconciliationReport(date) {
         const service = new ReconciliationService();
-        const result = await service.runDailyReconciliation('report', date);
+        const result = await service.runDailyReconciliation("report", date);
         return result;
     }
     /**
@@ -83,9 +88,9 @@ class ReconciliationService {
          AND created_at >= CURRENT_DATE - $1::integer
        GROUP BY DATE(created_at)
        ORDER BY date DESC`, [days]);
-        const summary = result.rows.map(row => ({
-            date: row.date.toISOString().split('T')[0],
-            status: 'success',
+        const summary = result.rows.map((row) => ({
+            date: row.date.toISOString().split("T")[0],
+            status: "success",
             total_collected: parseFloat(row.total_collected),
             discrepancies: 0,
         }));
@@ -97,12 +102,12 @@ class ReconciliationService {
     async fileDispute(reconciliationId, reason, userId) {
         await (0, audit_1.insertAuditLog)({
             userId,
-            action: 'RECONCILIATION_DISPUTED',
-            entity: 'reconciliation',
+            action: "RECONCILIATION_DISPUTED",
+            entity: "reconciliation",
             entityId: reconciliationId,
             metadata: { reason },
         });
-        return { id: reconciliationId, status: 'disputed' };
+        return { id: reconciliationId, status: "disputed" };
     }
 }
 exports.ReconciliationService = ReconciliationService;

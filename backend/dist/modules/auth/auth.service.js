@@ -280,17 +280,22 @@ class AuthService {
     }
     async storeRefreshTokenSession(userId, refreshToken, ipAddress, userAgent) {
         const hashedToken = await bcryptjs_1.default.hash(refreshToken, BCRYPT_ROUNDS);
-        await database_1.default.query(`INSERT INTO user_sessions (user_id, refresh_token_hash, ip, user_agent)
-       VALUES ($1, $2, $3, $4)`, [userId, hashedToken, ipAddress || null, userAgent || null]);
+        // Decode the token to get the expiration time
+        const decoded = jsonwebtoken_1.default.decode(refreshToken);
+        const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000) : null;
+        await database_1.default.query(`INSERT INTO user_sessions (user_id, refresh_token_hash, ip, user_agent, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`, [userId, hashedToken, ipAddress || null, userAgent || null, expiresAt]);
         await database_1.default.query("UPDATE users SET refresh_token_hash = $1 WHERE id = $2", [
             hashedToken,
             userId,
         ]);
     }
     async listSessions(userId) {
-        const result = await database_1.default.query(`SELECT id, ip, user_agent, is_revoked, created_at
+        const result = await database_1.default.query(`SELECT id, ip, user_agent, is_revoked, created_at, expires_at
      FROM user_sessions
-     WHERE user_id = $1 AND is_revoked = FALSE
+     WHERE user_id = $1
+       AND is_revoked = FALSE
+       AND (expires_at IS NULL OR expires_at > NOW())
      ORDER BY created_at DESC`, [userId]);
         return result.rows;
     }
@@ -361,9 +366,9 @@ class AuthService {
     }
     async updatePassword(userId, newPassword) {
         const passwordHash = await bcryptjs_1.default.hash(newPassword, BCRYPT_ROUNDS);
-        await database_1.default.query('UPDATE users SET password_hash = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2', [passwordHash, userId]);
+        await database_1.default.query("UPDATE users SET password_hash = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2", [passwordHash, userId]);
         await this.revokeAllSessions(userId);
-        logger_1.default.info('Password changed', { userId });
+        logger_1.default.info("Password changed", { userId });
     }
 }
 exports.AuthService = AuthService;

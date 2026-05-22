@@ -14,5 +14,7 @@ export declare class AuthController {
     getProfile(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
     resetPassword(req: Request, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
+    sendPublicVerificationCode(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    verifyPublicCode(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
 }
 //# sourceMappingURL=auth.controller.d.ts.map

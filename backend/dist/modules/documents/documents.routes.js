@@ -9,6 +9,7 @@ const documentsController = new documents_controller_1.DocumentsController();
 router.post('/upload', auth_1.authenticate, upload_middleware_1.upload.single('file'), documentsController.upload);
 router.get('/', auth_1.authenticate, documentsController.getDocuments);
 router.get('/:documentId', auth_1.authenticate, documentsController.getDocument);
-router.patch('/:documentId/verify', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), documentsController.verifyDocument);
+router.patch('/:documentId/verify', auth_1.authenticate, (0, auth_1.authorize)('admin', 'employee'), documentsController.verifyDocument);
+router.get('/admin/all', auth_1.authenticate, (0, auth_1.authorize)('admin', 'auditor', 'employee'), (req, res, next) => documentsController.getAllDocuments(req, res, next));
 exports.default = router;
 //# sourceMappingURL=documents.routes.js.map

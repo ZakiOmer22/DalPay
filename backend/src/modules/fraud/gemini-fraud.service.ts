@@ -3,8 +3,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import pool from "../../config/database";
 import logger from "../../utils/logger";
 
-const genAI = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+// Use backend env variable (no VITE_ prefix)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+// Correct model name – the stable version, not "latest"
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export class GeminiFraudService {
   /**

@@ -6,16 +6,10 @@ export declare class ReconciliationService {
     runDailyReconciliation(adminId: string, date?: string): Promise<{
         date: string;
         status: string;
-        total_collected: number;
-        total_disbursed: number;
-        discrepancies: number;
-        details: {
-            provider_id: any;
-            provider_name: any;
-            total_collected: number;
-            total_disbursed: number;
-            discrepancies: number;
-        }[];
+        total_collected: any;
+        total_disbursed: any;
+        discrepancies: any;
+        details: any[];
     }>;
     /**
      * Get reconciliation report for a specific date (read‑only, no audit log).
@@ -23,16 +17,10 @@ export declare class ReconciliationService {
     getReconciliationReport(date: string): Promise<{
         date: string;
         status: string;
-        total_collected: number;
-        total_disbursed: number;
-        discrepancies: number;
-        details: {
-            provider_id: any;
-            provider_name: any;
-            total_collected: number;
-            total_disbursed: number;
-            discrepancies: number;
-        }[];
+        total_collected: any;
+        total_disbursed: any;
+        discrepancies: any;
+        details: any[];
     }>;
     /**
      * Get a 30‑day summary of reconciliations.

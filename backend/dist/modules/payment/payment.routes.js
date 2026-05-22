@@ -13,8 +13,8 @@ router.get('/history', auth_1.authenticate, paymentController.getPaymentHistory)
 router.get('/status/:paymentId', auth_1.authenticate, paymentController.getPaymentStatus);
 router.get('/providers', auth_1.authenticate, paymentController.getProviders);
 // Admin: get all payments
-router.get('/admin/all', auth_1.authenticate, (0, auth_1.authorize)('admin', 'auditor'), (req, res, next) => paymentController.getAllPaymentsAdmin(req, res, next));
+router.get('/admin/all', auth_1.authenticate, (0, auth_1.authorize)('admin', 'auditor', 'employee'), (req, res, next) => paymentController.getAllPaymentsAdmin(req, res, next));
 // Admin: create a payment provider
-router.post('/providers', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), (req, res, next) => paymentController.createProvider(req, res, next));
+router.post('/providers', auth_1.authenticate, (0, auth_1.authorize)('admin', 'employee'), (req, res, next) => paymentController.createProvider(req, res, next));
 exports.default = router;
 //# sourceMappingURL=payment.routes.js.map
