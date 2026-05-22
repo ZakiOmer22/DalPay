@@ -1,5 +1,5 @@
 // web/src/services/api.ts
-const API_BASE = "/api/v1";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 interface ApiResponse<T = unknown> {
   success: boolean;
@@ -109,7 +109,6 @@ export const taxApi = {
   getSummary: () => request("/tax/summary"),
 };
 
-
 // ==================== TOKEN MANAGEMENT ====================
 
 export function setTokens(
@@ -172,6 +171,11 @@ export const paymentApi = {
   getStatus: (id: string) => request(`/payment/status/${id}`),
   getAllPaymentsAdmin: (page = 1, limit = 20) =>
     request(`/payment/admin/all?page=${page}&limit=${limit}`),
+  createProvider: (data: { provider_id: string; provider_name: string }) =>
+    request("/payment/providers", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // Admin API
@@ -198,8 +202,23 @@ export const adminApi = {
 
   getTaxpayerDetail: (userId: string) =>
     request<TaxpayerDetail>(`/admin/taxpayers/${userId}`),
+  getPendingUsers: () =>
+    request<
+      {
+        id: string;
+        fullName: string;
+        email?: string;
+        phone?: string;
+        createdAt: string;
+        approvalStatus: string;
+      }[]
+    >("/admin/users/pending"),
+  approveUser: (userId: string) =>
+    request(`/admin/users/${userId}/approve`, { method: "PUT" }),
+  rejectUser: (userId: string) =>
+    request(`/admin/users/${userId}/reject`, { method: "PUT" }),
+  getUserDetails: (userId: string) => request(`/admin/users/${userId}/details`),
 };
-
 
 // Types used by admin API
 export interface Taxpayer {

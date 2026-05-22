@@ -81,6 +81,9 @@ export default function DashboardPage() {
         case "taxpayer":
           navigate("/taxpayer/dashboard", { replace: true });
           break;
+        case "employee":
+          navigate("/employee/dashboard", { replace: true });
+          break;
         default:
           // Unknown role – force logout
           localStorage.removeItem("dalpay_access_token");

@@ -88,21 +88,18 @@ function BarChart({ data, maxValue, height = 20 }: any) {
 
 // ── Page Component ─────────────────────────────────────────────
 export default function ReportsPage() {
-  // Fetch assessments
   const { data: assessmentsData } = useQuery({
     queryKey: ["assessments"],
     queryFn: () => taxApi.getAssessments(),
     staleTime: 30000,
   });
 
-  // Fetch all payments (admin)
   const { data: paymentsData } = useQuery({
     queryKey: ["all-payments-report"],
     queryFn: () => paymentApi.getAllPaymentsAdmin(1, 1000),
     staleTime: 30000,
   });
 
-  // Fetch taxpayers for mapping
   const { data: taxpayersData } = useQuery({
     queryKey: ["taxpayers", { page: 1, limit: 1000 }],
     queryFn: () => adminApi.getTaxpayers({ page: 1, limit: 1000 }),
@@ -213,7 +210,7 @@ export default function ReportsPage() {
     return [...payments].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5);
   }, [payments]);
 
-  // Monthly revenue (if no endpoint, we can generate from payments if dates exist)
+  // Monthly revenue
   const monthlyRevenue = useMemo(() => {
     const revMap: Record<string, number> = {};
     payments.forEach(p => {

@@ -6,7 +6,6 @@ import {
   Wallet,
   FileText,
   HelpCircle,
-  Settings,
   ChevronLeft,
   ReceiptText,
   Bell,
@@ -46,8 +45,8 @@ const NAV_SECTIONS = [
     label: "Account",
     items: [
       { path: "/taxpayer/notifications", label: "Notifications", icon: Bell },
-      { path: "/taxpayer/faq", label: "Help & FAQ", icon: HelpCircle },
-      { path: "/taxpayer/account", label: "Settings", icon: Settings },
+      { path: "/faq", label: "Help & FAQ", icon: HelpCircle },
+      // { path: "/taxpayer/account", label: "Settings", icon: Settings },
     ],
   },
   {

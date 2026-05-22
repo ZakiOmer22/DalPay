@@ -57,7 +57,6 @@ function getErrorMessage(error: unknown): string {
     }
 
     if (status === 403) {
-      // Backend may send code "ACCOUNT_LOCKED" or "INTERNAL_ERROR" with message containing "locked"
       if (code === "ACCOUNT_LOCKED" || msg?.toLowerCase().includes("lock")) {
         const minutes = err.data?.retryAfterMinutes ?? 15;
         return `Account temporarily locked. Please try again in ${minutes} minute(s).`;
@@ -69,7 +68,6 @@ function getErrorMessage(error: unknown): string {
       return "Invalid phone number/email or password. Please check your credentials.";
     }
 
-    // Fallback to the message directly from the server
     if (msg) return msg;
   }
 
@@ -116,11 +114,9 @@ export default function LoginPage() {
           ? { email: identifier.trim(), password }
           : { phoneNumber: identifier.trim(), password };
 
-      // The login endpoint returns { success, data: LoginResponseData, message, ... }
       const response = await authApi.login(payload);
       const data = response.data as LoginResponseData;
 
-      // Store user object for the Navbar
       setTokens(data.accessToken, data.refreshToken, {
         fullName: data.user.fullName,
         role: data.user.role,
@@ -129,7 +125,13 @@ export default function LoginPage() {
       setSuccessMessage("Login successful! Redirecting...");
       setTimeout(() => navigate("/dashboard"), 1500);
     } catch (err: unknown) {
-      setError(getErrorMessage(err));
+      const msg = getErrorMessage(err);
+      // ✅ Redirect to verify page if account not verified
+      if (msg.toLowerCase().includes("not verified")) {
+        navigate(`/verify?identifier=${encodeURIComponent(identifier.trim())}&method=${loginMethod}`);
+        return;
+      }
+      setError(msg);
     } finally {
       setIsSubmitting(false);
     }
