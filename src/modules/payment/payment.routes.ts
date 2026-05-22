@@ -18,7 +18,7 @@ router.get('/providers', authenticate, paymentController.getProviders);
 router.get(
   '/admin/all',
   authenticate,
-  authorize('admin', 'auditor'),
+  authorize('admin', 'auditor', 'employee'),
   (req, res, next) => paymentController.getAllPaymentsAdmin(req, res, next)
 );
 
@@ -26,7 +26,7 @@ router.get(
 router.post(
   '/providers',
   authenticate,
-  authorize('admin', 'super_admin'),
+  authorize('admin', 'employee'),
   (req, res, next) => paymentController.createProvider(req, res, next)
 );
 

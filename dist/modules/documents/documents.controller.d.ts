@@ -4,5 +4,6 @@ export declare class DocumentsController {
     getDocuments(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getDocument(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     verifyDocument(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    getAllDocuments(req: Request, res: Response, next: NextFunction): Promise<void>;
 }
 //# sourceMappingURL=documents.controller.d.ts.map

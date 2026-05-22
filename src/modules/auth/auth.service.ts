@@ -489,11 +489,17 @@ export class AuthService {
     userAgent?: string,
   ) {
     const hashedToken = await bcrypt.hash(refreshToken, BCRYPT_ROUNDS);
+
+    // Decode the token to get the expiration time
+    const decoded = jwt.decode(refreshToken) as { exp?: number } | null;
+    const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000) : null;
+
     await pool.query(
-      `INSERT INTO user_sessions (user_id, refresh_token_hash, ip, user_agent)
-       VALUES ($1, $2, $3, $4)`,
-      [userId, hashedToken, ipAddress || null, userAgent || null],
+      `INSERT INTO user_sessions (user_id, refresh_token_hash, ip, user_agent, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+      [userId, hashedToken, ipAddress || null, userAgent || null, expiresAt],
     );
+
     await pool.query("UPDATE users SET refresh_token_hash = $1 WHERE id = $2", [
       hashedToken,
       userId,
@@ -502,9 +508,11 @@ export class AuthService {
 
   async listSessions(userId: string) {
     const result = await pool.query(
-      `SELECT id, ip, user_agent, is_revoked, created_at
+      `SELECT id, ip, user_agent, is_revoked, created_at, expires_at
      FROM user_sessions
-     WHERE user_id = $1 AND is_revoked = FALSE
+     WHERE user_id = $1
+       AND is_revoked = FALSE
+       AND (expires_at IS NULL OR expires_at > NOW())
      ORDER BY created_at DESC`,
       [userId],
     );
@@ -611,10 +619,10 @@ export class AuthService {
   async updatePassword(userId: string, newPassword: string) {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.query(
-      'UPDATE users SET password_hash = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2',
-      [passwordHash, userId]
+      "UPDATE users SET password_hash = $1, token_version = COALESCE(token_version, 0) + 1 WHERE id = $2",
+      [passwordHash, userId],
     );
     await this.revokeAllSessions(userId);
-    logger.info('Password changed', { userId });
+    logger.info("Password changed", { userId });
   }
 }

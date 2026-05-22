@@ -22,5 +22,18 @@ export declare class LedgerService {
      */
     getAccountBalance(account: string): Promise<number>;
     verifyBalance(): Promise<boolean>;
+    /**
+     * Get filtered ledger entries with pagination.
+     * Returns total count and entries.
+     */
+    getFilteredLedger(filters: {
+        search?: string;
+        type?: string;
+        startDate?: string;
+        endDate?: string;
+    }, limit: number, offset: number): Promise<{
+        total: number;
+        entries: any[];
+    }>;
 }
 //# sourceMappingURL=ledger.service.d.ts.map

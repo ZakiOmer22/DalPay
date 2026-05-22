@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { successResponse } from '../../utils/response';
 import pool from '../../config/database';
 import { decrypt } from '../../utils/encryption';
+import logger from '../../utils/logger';   // optional but good for consistency
+import { AppError } from '@/utils/errors';
 
 export const getTaxpayers = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -115,6 +117,150 @@ export const getTaxpayerDetail = async (req: Request, res: Response, next: NextF
       documents,
       disputes,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getUserRegistrationDetails = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req.params;
+    // Fetch user with plain fields
+    const userRes = await pool.query(
+      `SELECT id, full_name, email_plain as email, phone_plain as phone, national_id_plain as national_id,
+              date_of_birth, gender, occupation, region, district, address,
+              id_type, id_number, driving_license_number, proof_of_address_type,
+              stripe_verification_id, created_at, approval_status
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
+    if (userRes.rows.length === 0) throw new AppError("User not found", 404);
+    const user = userRes.rows[0];
+
+    // Fetch uploaded documents (assuming a `user_documents` table)
+    const docsRes = await pool.query(
+      `SELECT document_type, file_url, uploaded_at
+       FROM user_documents
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    return successResponse(res, { user, documents: docsRes.rows });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSessions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = `
+      SELECT
+        us.id,                     
+        us.user_id,
+        u.full_name,
+        u.email,
+        u.role,
+        us.ip,
+        us.user_agent,
+        us.created_at,
+        us.last_activity,
+        us.is_revoked
+      FROM user_sessions us
+      JOIN users u ON us.user_id = u.id
+      ORDER BY us.last_activity DESC
+    `;
+
+    const result = await pool.query(query);
+
+    const sessions = result.rows.map(row => ({
+      ...row,
+      email: decrypt(row.email) || row.email,
+    }));
+
+    return successResponse(res, sessions);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Add revoke session function
+export const revokeSession = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `UPDATE user_sessions SET is_revoked = true WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    logger.info('Session revoked by admin', { sessionId: id });
+    return successResponse(res, { id }, 'Session revoked successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPendingUsers = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, full_name, email, phone, national_id, created_at, approval_status
+       FROM users
+       WHERE approval_status = 'pending'
+       ORDER BY created_at ASC`
+    );
+    // Decode sensitive fields? Not necessary for admin review – just show identifiers
+    const users = result.rows.map(u => ({
+      id: u.id,
+      fullName: u.full_name,
+      email: u.email,
+      phone: u.phone,
+      nationalId: u.national_id,
+      createdAt: u.created_at,
+      approvalStatus: u.approval_status,
+    }));
+    return successResponse(res, users);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const approveUser = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req.params;
+    const result = await pool.query(
+      `UPDATE users SET approval_status = 'approved', updated_at = NOW()
+       WHERE id = $1 AND approval_status = 'pending'
+       RETURNING id, full_name, approval_status`,
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      throw new AppError('User not found or already processed', 404);
+    }
+    // Optionally: send email notification to user
+    return successResponse(res, result.rows[0], 'User approved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const rejectUser = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req.params;
+    const result = await pool.query(
+      `UPDATE users SET approval_status = 'rejected', updated_at = NOW()
+       WHERE id = $1 AND approval_status = 'pending'
+       RETURNING id, full_name, approval_status`,
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      throw new AppError('User not found or already processed', 404);
+    }
+    return successResponse(res, result.rows[0], 'User rejected');
   } catch (error) {
     next(error);
   }

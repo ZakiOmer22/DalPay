@@ -25,7 +25,7 @@ router.patch(
 router.get(
   '/admin/all',
   authenticate,
-  authorize('admin', 'auditor'),
+  authorize('admin', 'auditor', 'employee'),
   (req, res, next) => controller.getAll(req, res, next)
 );
 

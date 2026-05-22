@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerSchema = void 0;
+// modules/auth/register.schema.ts
 const zod_1 = require("zod");
 exports.registerSchema = zod_1.z.object({
     nationalId: zod_1.z
@@ -11,7 +12,7 @@ exports.registerSchema = zod_1.z.object({
     email: zod_1.z.string().email().optional(),
     phoneNumber: zod_1.z
         .string()
-        .regex(/^\+2526\d{8}$/, "Phone must be +2526XXXXXXXX"),
+        .regex(/^\+2526\d{8,9}$/, "Phone must be +2526XXXXXXXX or +2526XXXXXXXXX"),
     password: zod_1.z
         .string()
         .min(12, "Password must be at least 12 characters")
@@ -44,6 +45,8 @@ exports.registerSchema = zod_1.z.object({
     parentName: zod_1.z.string().max(200).trim().optional(),
     parentNationalId: zod_1.z.string().optional(),
     parentPhone: zod_1.z.string().optional(),
-    turnstileToken: zod_1.z.string().optional(),
+    recaptchaToken: zod_1.z.string().min(1, "reCAPTCHA token required"),
+    agreeToTerms: zod_1.z.boolean().optional().default(false),
+    isUnder18: zod_1.z.boolean().optional().default(false),
 }).strict();
 //# sourceMappingURL=register.schema.js.map

@@ -8,7 +8,12 @@ export declare class PaymentService {
         phoneNumber: string;
         ipAddress?: string;
     }): Promise<any>;
-    confirmPayment(paymentId: string, transactionRef: string, status: string): Promise<any>;
+    /**
+     * Runs fraud analysis outside any transaction so the payment row is
+     * visible (committed) when fraud_analysis tries to insert its FK reference.
+     */
+    private runFraudAnalysisAsync;
+    confirmPayment(paymentId: string, transactionRef: string, status?: string): Promise<any>;
     getPaymentHistory(userId: string, page?: number, limit?: number): Promise<{
         payments: {
             payment_id: any;
@@ -41,7 +46,6 @@ export declare class PaymentService {
         created_at: any;
     }[]>;
     getTotalPaymentsCount(): Promise<number>;
-    /** Create a new payment provider */
     createProvider(data: {
         provider_id: string;
         provider_name: string;

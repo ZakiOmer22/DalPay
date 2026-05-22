@@ -34,10 +34,10 @@ class AuditService {
         };
     }
     async verifyChain() {
+        const chainStatus = [];
         const result = await database_1.default.query("SELECT * FROM audit_logs ORDER BY created_at ASC");
         const logs = result.rows;
         let prevHash = "0".repeat(64);
-        const chainStatus = [];
         for (const log of logs) {
             // Recreate the exact same payload – all timestamps are now in the same format
             const payload = JSON.stringify({

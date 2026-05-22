@@ -12,6 +12,6 @@ router.get('/', auth_1.authenticate, (req, res, next) => controller.getMyNotific
 router.patch('/:id/read', auth_1.authenticate, (req, res, next) => controller.markAsRead(req, res, next));
 // ── Admin route ──────────────────────────────────────────
 // Admin: list all notifications (paginated, filterable)
-router.get('/admin/all', auth_1.authenticate, (0, auth_1.authorize)('admin', 'auditor'), (req, res, next) => controller.getAll(req, res, next));
+router.get('/admin/all', auth_1.authenticate, (0, auth_1.authorize)('admin', 'auditor', 'employee'), (req, res, next) => controller.getAll(req, res, next));
 exports.default = router;
 //# sourceMappingURL=notification.routes.js.map

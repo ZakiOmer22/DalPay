@@ -32,13 +32,35 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminRoutes = void 0;
+// src/modules/admin/admin.routes.ts
 const express_1 = require("express");
 const auth_1 = require("../../middleware/auth");
 const adminController = __importStar(require("./admin.controller"));
+const response_1 = require("@/utils/response");
+const database_1 = __importDefault(require("@/config/database")); // ← ensure this is imported
 const router = (0, express_1.Router)();
 exports.adminRoutes = router;
-router.get('/taxpayers', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.getTaxpayers);
-router.get('/taxpayers/:userId', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.getTaxpayerDetail);
+router.get('/taxpayers', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin', 'employee'), adminController.getTaxpayers);
+router.get('/taxpayers/:userId', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin', 'employee'), adminController.getTaxpayerDetail);
+router.get('/sessions', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin', 'employee'), adminController.getSessions);
+router.post('/sessions/:id/revoke', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.revokeSession);
+router.get('/users/pending', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.getPendingUsers);
+router.put('/users/:userId/approve', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.approveUser);
+router.put('/users/:userId/reject', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.rejectUser);
+router.get('/users/:userId/details', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin'), adminController.getUserRegistrationDetails);
+// Admin/Employee view all assessments
+router.get('/assessments', auth_1.authenticate, (0, auth_1.authorize)('admin', 'super_admin', 'employee'), async (req, res, next) => {
+    try {
+        const result = await database_1.default.query('SELECT * FROM tax_assessments ORDER BY created_at DESC LIMIT 50');
+        return (0, response_1.successResponse)(res, result.rows);
+    }
+    catch (error) {
+        next(error);
+    }
+});
 //# sourceMappingURL=admin.routes.js.map

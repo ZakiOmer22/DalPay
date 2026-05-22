@@ -40,7 +40,9 @@ export declare const registerSchema: z.ZodObject<{
     parentName: z.ZodOptional<z.ZodString>;
     parentNationalId: z.ZodOptional<z.ZodString>;
     parentPhone: z.ZodOptional<z.ZodString>;
-    turnstileToken: z.ZodOptional<z.ZodString>;
+    recaptchaToken: z.ZodString;
+    agreeToTerms: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
+    isUnder18: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
 }, z.core.$strict>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 //# sourceMappingURL=register.schema.d.ts.map

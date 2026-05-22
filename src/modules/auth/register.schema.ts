@@ -1,3 +1,4 @@
+// modules/auth/register.schema.ts
 import { z } from "zod";
 
 export const registerSchema = z.object({
@@ -9,7 +10,7 @@ export const registerSchema = z.object({
   email: z.string().email().optional(),
   phoneNumber: z
     .string()
-    .regex(/^\+2526\d{8}$/, "Phone must be +2526XXXXXXXX"),
+    .regex(/^\+2526\d{8,9}$/, "Phone must be +2526XXXXXXXX or +2526XXXXXXXXX"),
   password: z
     .string()
     .min(12, "Password must be at least 12 characters")
@@ -49,7 +50,9 @@ export const registerSchema = z.object({
   parentName: z.string().max(200).trim().optional(),
   parentNationalId: z.string().optional(),
   parentPhone: z.string().optional(),
-  turnstileToken: z.string().optional(),
+  recaptchaToken: z.string().min(1, "reCAPTCHA token required"),
+  agreeToTerms: z.boolean().optional().default(false),
+  isUnder18: z.boolean().optional().default(false),
 }).strict();
 
 export type RegisterInput = z.infer<typeof registerSchema>;

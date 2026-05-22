@@ -24,5 +24,18 @@ router.post('/analyze-payment/:paymentId', auth_1.authenticate, (0, auth_1.autho
         next(error);
     }
 });
+router.post('/analyze-all-assessments', auth_1.authenticate, (0, auth_1.authorize)('admin'), async (req, res, next) => {
+    try {
+        const summary = await geminiFraud.analyzeAllAssessments();
+        return res.json({
+            success: true,
+            data: summary,
+            message: `Analyzed ${summary.processed} payments. ${summary.flagged} flagged.`,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
 exports.default = router;
 //# sourceMappingURL=fraud.routes.js.map
