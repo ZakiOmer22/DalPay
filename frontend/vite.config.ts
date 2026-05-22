@@ -16,6 +16,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // ADD THIS to fix Stripe CORS
+      '/.stripe': {
+        target: 'https://r.stripe.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/\.stripe/, ''),
+      },
     },
   },
 })

@@ -1,73 +1,40 @@
+// src/components/layout/Employee/EmployeeSidebar.tsx
 import { NavLink } from "react-router-dom";
 import {
-  LayoutDashboard, Users, FileText, CreditCard,
-  Shield, Bell, Settings, ChevronLeft, BarChart3,
-  RefreshCw, ArrowBigLeft, X,
-  BookOpen,
-  AlertCircle,
-  Monitor,
+  LayoutDashboard, FileText, User,
+  Shield, ChevronLeft, ArrowBigLeft, X,
+  Users,
+  CreditCard, Clock,
 } from "lucide-react";
 
-const APP_NAME = "DalPay Admin";
+const APP_NAME = "DalPay Tax Assistant";
 
 const NAV_SECTIONS = [
   {
     label: "Main",
     items: [
-      { path: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
-      { path: "/admin/taxpayers", label: "Taxpayers", icon: Users },
-      { path: "/admin/assessments", label: "Assessments", icon: FileText },
-      { path: "/admin/payments", label: "Payments", icon: CreditCard },
+      { path: "/employee/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
+      { path: "/employee/visitors", label: "Visitors", icon: Users },
+      { path: "/employee/tax-assistance", label: "Tax Assistance", icon: FileText },
+      { path: "/employee/payments", label: "Process Payment", icon: CreditCard },
     ],
   },
   {
-    label: "Reporting & Audit",
+    label: "Support",
     items: [
-      { path: "/admin/reports", label: "Reports", icon: BarChart3 },
-      { path: "/admin/audit-logs", label: "Audit Logs", icon: Shield },
-      { path: "/admin/reconciliation", label: "Reconciliation", icon: RefreshCw },
+      { path: "/employee/my-sessions", label: "Session History", icon: Shield },
+      { path: "/profile", label: "My Profile", icon: User },
     ],
   },
   {
-    label: "Cases",
-    items: [
-      { path: "/admin/disputes", label: "Disputes", icon: AlertCircle },
-      { path: "/admin/documents", label: "Documents", icon: FileText },
-      { path: "/admin/fraud", label: "Fraud Analysis", icon: Shield },
-    ],
-  },
-  {
-    label: "Finance",
-    items: [
-      { path: "/admin/ledger", label: "Ledger", icon: BookOpen },
-    ],
-  },
-  {
-    label: "Account",
-    items: [
-      { path: "/admin/my-sessions", label: "My Sessions", icon: Monitor },
-      { path: "/profile", label: "Profile", icon: Users },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { path: "/admin/notifications", label: "Notifications", icon: Bell },
-      { path: "/admin/sessions", label: "All Sessions", icon: Shield },
-      { path: "/admin/settings", label: "Settings", icon: Settings },
-      { path: "/admin/approve-users", label: "Approve Users", icon: AlertCircle },
-    ],
-  },
-  {
-    label: "Website",
+    label: "Navigation",
     items: [
       { path: "/", label: "Back to Website", icon: ArrowBigLeft },
     ],
   },
 ];
 
-
-export default function AdminSidebar({
+export default function EmployeeSidebar({
   sidebarOpen,
   toggleSidebar,
   isMobile,
@@ -76,22 +43,22 @@ export default function AdminSidebar({
   toggleSidebar: () => void;
   isMobile: boolean;
 }) {
-  // Fixed dark admin sidebar colors (original design)
   const bg = "#0a0f1a";
   const border = "rgba(255,255,255,0.05)";
   const text = "rgba(255,255,255,0.55)";
   const activeText = "#ffffff";
-  const activeBg = "rgba(59,130,246,0.15)";
-  const activeBorder = "#3b82f6";
+  const activeBg = "rgba(34, 197, 94, 0.15)";
+  const activeBorder = "#22c55e";
   const hoverBg = "rgba(255,255,255,0.07)";
   const hoverColor = "rgba(255,255,255,0.85)";
   const sectionLabel = "rgba(255,255,255,0.2)";
   const divider = "rgba(255,255,255,0.05)";
-  const logoBg = "rgba(255,255,255,0.1)";
+  const logoBg = "rgba(34, 197, 94, 0.25)";
   const footerText = "rgba(255,255,255,0.18)";
   const toggleColor = "rgba(255,255,255,0.25)";
   const toggleHoverBg = "rgba(255,255,255,0.07)";
   const toggleHoverColor = "rgba(255,255,255,0.65)";
+  const badgeText = "#3BA7BC";
 
   const sidebarStyle: React.CSSProperties = {
     width: sidebarOpen ? 256 : 68,
@@ -116,7 +83,6 @@ export default function AdminSidebar({
 
   return (
     <aside style={sidebarStyle}>
-      {/* Mobile close button */}
       {isMobile && (
         <button
           onClick={toggleSidebar}
@@ -141,34 +107,38 @@ export default function AdminSidebar({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          padding: sidebarOpen ? "16px 14px" : "16px 0",
+          gap: 12,
+          padding: sidebarOpen ? "14px 14px" : "14px 8px",
           justifyContent: sidebarOpen ? "flex-start" : "center",
           borderBottom: `1px solid ${border}`,
           flexShrink: 0,
-          minHeight: 60,
+          minHeight: 64,
+          background: "rgba(34, 197, 94, 0.08)",
         }}
       >
         <div
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 9,
+            width: 44,
+            height: 44,
+            borderRadius: 10,
             background: logoBg,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            border: "1px solid rgba(34, 197, 94, 0.3)",
+            boxShadow: "0 0 12px rgba(34, 197, 94, 0.15)",
+            flexShrink: 0,
           }}
         >
           <img src="/icon.png" alt="Logo" style={{ width: 32, height: 32 }} />
         </div>
         {sidebarOpen && (
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <p
               style={{
                 fontWeight: 700,
-                fontSize: 13,
-                color: "#ffffff",
+                fontSize: 14,
+                color: "#22c55e",
                 letterSpacing: "-.01em",
                 lineHeight: 1.25,
                 whiteSpace: "nowrap",
@@ -178,15 +148,15 @@ export default function AdminSidebar({
             >
               {APP_NAME}
             </p>
-            <p style={{ fontSize: 10.5, color: "rgba(255,255,255,0.3)", lineHeight: 1.3 }}>
-              Government Portal
+            <p style={{ fontSize: 11, color: "rgba(34, 197, 94, 0.6)", lineHeight: 1.3, fontWeight: 500 }}>
+              Office Assistant
             </p>
           </div>
         )}
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "6px 0" }}>
+      <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "6px 0", marginTop: sidebarOpen ? 6 : 0 }}>
         {NAV_SECTIONS.map((section) => (
           <div key={section.label}>
             {sidebarOpen ? (
@@ -284,17 +254,25 @@ export default function AdminSidebar({
       {/* Footer */}
       <div style={{ borderTop: `1px solid ${border}`, padding: "8px 8px 10px", flexShrink: 0 }}>
         {sidebarOpen && (
-          <p
-            style={{
-              textAlign: "center",
-              fontSize: 12,
-              color: footerText,
+          <>
+            <p style={{ textAlign: "center", fontSize: 12, color: footerText, marginBottom: 6, letterSpacing: "0.03em" }}>
+              DalPay Assistant
+            </p>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 8px",
+              background: "rgba(59, 167, 188, 0.05)",
+              borderRadius: 6,
               marginBottom: 6,
-              letterSpacing: "0.03em",
-            }}
-          >
-            DalPay Government
-          </p>
+              fontSize: 10,
+              color: badgeText,
+            }}>
+              <Clock size={12} />
+              <span>Last sync: now</span>
+            </div>
+          </>
         )}
         <button
           onClick={toggleSidebar}

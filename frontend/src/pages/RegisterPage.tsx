@@ -1,8 +1,7 @@
-// web/src/pages/RegisterPage.tsx — Full Registration with Real Stripe Identity
-// (theme updated to explicit light/dark mode classes)
-
-import { useState, useEffect } from "react";
+// web/src/pages/RegisterPage.tsx
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import ReCAPTCHA from "react-google-recaptcha";
 import {
     ShieldCheck,
     ArrowRight,
@@ -20,13 +19,15 @@ import {
     FileText,
     AlertCircle,
     Loader2,
+    Upload,
+    Image,
+    File,
+    X,
 } from "lucide-react";
-import { authApi, verificationApi, setTokens, type RegisterPayload } from "@/services/api";
-import TurnstileWidget from "@/components/shared/TurnstileWidget";
+import { setTokens, verificationApi } from "@/services/api";
 
 const TOTAL_STEPS = 5;
-
-const stepLabels = ["Personal Info", "Contact & Address", "Identity", "Documents", "Review"];
+const stepLabels = ["Personal Info", "Contact & Address", "Identity & Documents", "Agreements", "Review"];
 
 const REGIONS = [
     { value: "maroodi_jeex", label: "Maroodi Jeex" },
@@ -59,8 +60,14 @@ const PROOF_OF_ADDRESS_TYPES = [
     { value: "employer_letter", label: "Employer Letter" },
 ];
 
-// ------------------------------------------------------------------
-// Shapes of the data returned by the verification API
+interface UploadedFile {
+    file: File;
+    preview: string;
+    name: string;
+    size: number;
+    type: string;
+}
+
 interface VerificationSessionData {
     verificationId: string;
     verificationUrl: string;
@@ -68,16 +75,27 @@ interface VerificationSessionData {
 
 interface VerificationStatusData {
     status: string;
+    lastError?: string;
 }
 
-// ------------------------------------------------------------------
-// Shape of a successful registration response (matches backend)
 interface RegistrationResponseData {
     accessToken: string;
     refreshToken: string;
 }
 
-// ------------------------------------------------------------------
+// Validation helpers
+const validateNationalId = (value: string): boolean => /^SL-\d{4}-\d{3}$/.test(value);
+const validatePhoneNumber = (value: string): boolean => /^\+2526\d{8,9}$/.test(value);
+const validatePassword = (value: string): boolean =>
+    value.length >= 12 && /[A-Z]/.test(value) && /[a-z]/.test(value) && /[!@#$%^&*(),.?":{}|<>]/.test(value);
+const calculateAge = (dob: string): number => {
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
+};
 
 export default function RegisterPage() {
     const navigate = useNavigate();
@@ -88,9 +106,22 @@ export default function RegisterPage() {
     const [error, setError] = useState("");
     const [successMessage, setSuccessMessage] = useState("");
     const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+    const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+    const recaptchaRef = useRef<ReCAPTCHA>(null);
     const [stripeVerificationId, setStripeVerificationId] = useState("");
     const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
-    const [turnstileToken, setTurnstileToken] = useState('');
+    const [verificationError, setVerificationError] = useState<string>("");
+
+    // Document uploads state
+    const [identityDocument, setIdentityDocument] = useState<UploadedFile | null>(null);
+    const [proofOfAddressDocument, setProofOfAddressDocument] = useState<UploadedFile | null>(null);
+    const [portraitPhoto, setPortraitPhoto] = useState<UploadedFile | null>(null);
+    const [uploadErrors, setUploadErrors] = useState({
+        identity: "",
+        proofOfAddress: "",
+        portrait: "",
+    });
+
     const [formData, setFormData] = useState({
         nationalId: "",
         firstName: "",
@@ -109,51 +140,82 @@ export default function RegisterPage() {
         idNumber: "",
         drivingLicenseNumber: "",
         proofOfAddressType: "utility_bill",
-        agreeToStripeVerification: false,
         agreeToTerms: false,
-        agreeToPrivacy: false,
         isUnder18: false,
         parentName: "",
         parentNationalId: "",
         parentPhone: "",
     });
 
-    // updateField now accepts string or boolean, no `any`
     const updateField = (field: string, value: string | boolean) => {
         setFormData((prev) => ({ ...prev, [field]: value }));
         setError("");
         setSuccessMessage("");
     };
 
-    // ────────────────────────────────────────────────────────────
-    // Poll Stripe verification status (handles ALL states)
-    // Must be defined BEFORE the useEffect that uses it
-    // ────────────────────────────────────────────────────────────
+    // File handlers
+    const handleFileUpload = (
+        file: File | null,
+        type: "identity" | "proofOfAddress" | "portrait"
+    ) => {
+        setUploadErrors((prev) => ({ ...prev, [type]: "" }));
+        if (!file) {
+            if (type === "identity") setIdentityDocument(null);
+            if (type === "proofOfAddress") setProofOfAddressDocument(null);
+            if (type === "portrait") setPortraitPhoto(null);
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            setUploadErrors((prev) => ({ ...prev, [type]: "File size must be < 5MB" }));
+            return;
+        }
+        const allowedTypes = ["image/jpeg", "image/png", "image/jpg", "application/pdf"];
+        if (!allowedTypes.includes(file.type)) {
+            setUploadErrors((prev) => ({ ...prev, [type]: "Only JPEG, PNG, or PDF" }));
+            return;
+        }
+        const preview = URL.createObjectURL(file);
+        const uploadedFile = { file, preview, name: file.name, size: file.size, type: file.type };
+        if (type === "identity") setIdentityDocument(uploadedFile);
+        if (type === "proofOfAddress") setProofOfAddressDocument(uploadedFile);
+        if (type === "portrait") setPortraitPhoto(uploadedFile);
+    };
+
+    const removeFile = (type: "identity" | "proofOfAddress" | "portrait") => {
+        if (type === "identity" && identityDocument) URL.revokeObjectURL(identityDocument.preview);
+        if (type === "proofOfAddress" && proofOfAddressDocument) URL.revokeObjectURL(proofOfAddressDocument.preview);
+        if (type === "portrait" && portraitPhoto) URL.revokeObjectURL(portraitPhoto.preview);
+        if (type === "identity") setIdentityDocument(null);
+        if (type === "proofOfAddress") setProofOfAddressDocument(null);
+        if (type === "portrait") setPortraitPhoto(null);
+        setUploadErrors((prev) => ({ ...prev, [type]: "" }));
+    };
+
+    // Poll Stripe verification status – handles all possible Stripe states
     const startPolling = (sessionId: string) => {
         let pollCount = 0;
         const maxPolls = 100; // 5 minutes
-
         const pollInterval = setInterval(async () => {
             pollCount++;
             try {
-                const statusResponse = await verificationApi.checkStatus(sessionId);
-                // cast to known type (API returns `unknown`)
-                const statusData = statusResponse.data as VerificationStatusData;
-                const status = statusData.status;
+                const response = await verificationApi.checkStatus(sessionId);
+                // Log the full response for debugging
+                console.log("Polling response:", response.data);
+                // The response might be nested differently; assume response.data has a 'status' field
+                const statusData = response.data as any;
+                const status = statusData.status || statusData.state || "unknown";
                 setVerificationStatus(status);
+                setVerificationError(statusData.lastError || statusData.error || "");
 
                 switch (status) {
                     case "verified":
                         clearInterval(pollInterval);
                         setIsVerifying(false);
                         setError("");
-                        setSuccessMessage("Identity verified! You can continue.");
-                        setFormData((prev) => ({ ...prev, agreeToStripeVerification: true }));
+                        setSuccessMessage("Identity verified successfully! You can continue.");
                         break;
                     case "processing":
-                        setSuccessMessage(
-                            "Stripe is analyzing your documents. This usually takes 1-2 minutes..."
-                        );
+                        setSuccessMessage("Stripe is analyzing your documents. This takes 1-2 minutes...");
                         break;
                     case "requires_input":
                         setSuccessMessage("Please complete the verification form in the new tab.");
@@ -161,40 +223,69 @@ export default function RegisterPage() {
                     case "requires_action":
                         clearInterval(pollInterval);
                         setIsVerifying(false);
-                        setError(
-                            "Verification failed. Stripe requires additional information. Please try again."
-                        );
+                        setError("Verification requires additional action. Please try again.");
                         setSuccessMessage("");
                         setVerificationStatus(null);
                         break;
                     case "canceled":
                         clearInterval(pollInterval);
                         setIsVerifying(false);
-                        setError("Verification was canceled or expired. Please try again.");
+                        setError("Verification was canceled. Please start a new session.");
+                        setSuccessMessage("");
+                        setVerificationStatus(null);
+                        break;
+                    case "expired":
+                        clearInterval(pollInterval);
+                        setIsVerifying(false);
+                        setError("Verification session expired. Please try again.");
+                        setSuccessMessage("");
+                        setVerificationStatus(null);
+                        break;
+                    case "failed":
+                        clearInterval(pollInterval);
+                        setIsVerifying(false);
+                        setError(`Verification failed: ${statusData.lastError || "Please try again with clear documents."}`);
                         setSuccessMessage("");
                         setVerificationStatus(null);
                         break;
                     default:
                         setSuccessMessage(`Status: ${status}. Complete verification in the new tab.`);
                 }
-            } catch {
-                // keep polling
+            } catch (err) {
+                console.error("Polling error:", err);
             }
-
             if (pollCount >= maxPolls) {
                 clearInterval(pollInterval);
                 setIsVerifying(false);
                 if (verificationStatus !== "verified") {
-                    setError("Verification timed out after 5 minutes. Please try again.");
-                    setSuccessMessage("");
+                    setError("Verification timed out after 5 minutes. Please try again or refresh status.");
                 }
             }
         }, 3000);
     };
+    const refreshVerificationStatus = async () => {
+        if (!stripeVerificationId) return;
+        try {
+            const response = await verificationApi.checkStatus(stripeVerificationId);
+            const statusData = response.data as any;
+            const status = statusData.status || statusData.state || "unknown";
+            setVerificationStatus(status);
+            setVerificationError(statusData.lastError || statusData.error || "");
+            if (status === "verified") {
+                setSuccessMessage("Identity verified! You can continue.");
+                setError("");
+            } else if (status === "processing") {
+                setSuccessMessage("Still processing...");
+            } else {
+                setError(`Current status: ${status}. Please complete Stripe verification.`);
+            }
+        } catch (err) {
+            console.error("Status refresh failed", err);
+        }
+    };
 
-    // ────────────────────────────────────────────────────────────
-    // Restore registration data when returning from Stripe
-    // ────────────────────────────────────────────────────────────
+
+    // Restore saved registration data (if any)
     useEffect(() => {
         const savedData = localStorage.getItem("dalpay_registration_data");
         const savedSessionId = localStorage.getItem("dalpay_stripe_session_id");
@@ -202,56 +293,30 @@ export default function RegisterPage() {
         const savedCompletedSteps = localStorage.getItem("dalpay_completed_steps");
 
         if (savedData && savedSessionId) {
-            // Defer state updates to avoid the "setState in effect" lint warning
             setTimeout(() => {
                 try {
-                    const parsedData = JSON.parse(savedData);
-                    const completedSteps = savedCompletedSteps ? JSON.parse(savedCompletedSteps) : undefined;
-
-                    setFormData(parsedData);
+                    const parsed = JSON.parse(savedData);
+                    setFormData(parsed.formData);
+                    if (parsed.identityDocument) setIdentityDocument(parsed.identityDocument);
+                    if (parsed.proofOfAddressDocument) setProofOfAddressDocument(parsed.proofOfAddressDocument);
+                    if (parsed.portraitPhoto) setPortraitPhoto(parsed.portraitPhoto);
                     setStripeVerificationId(savedSessionId);
                     if (savedStep) setStep(parseInt(savedStep));
-                    if (completedSteps) setCompletedSteps(completedSteps);
-
-                    setSuccessMessage("Welcome back! Checking your verification status...");
-
+                    if (savedCompletedSteps) setCompletedSteps(JSON.parse(savedCompletedSteps));
+                    setSuccessMessage("Checking your verification status...");
                     verificationApi
                         .checkStatus(savedSessionId)
-                        .then((statusResponse) => {
-                            const statusData = statusResponse.data as VerificationStatusData;
-                            const status = statusData.status;
+                        .then((resp) => {
+                            const status = (resp.data as VerificationStatusData).status;
                             setVerificationStatus(status);
-
                             if (status === "verified") {
-                                setError("");
-                                setSuccessMessage(
-                                    "Identity verified successfully! You can continue to the next step."
-                                );
-                                setFormData((prev) => ({ ...prev, agreeToStripeVerification: true }));
+                                setSuccessMessage("Identity verified! You can continue.");
                             } else if (status === "processing") {
-                                setSuccessMessage(
-                                    "Stripe is still processing your documents. This page will update automatically."
-                                );
                                 startPolling(savedSessionId);
-                            } else if (status === "requires_input") {
-                                setSuccessMessage(
-                                    "Verification incomplete. Click 'Start Verification' to try again."
-                                );
-                            } else if (status === "requires_action") {
-                                setError(
-                                    "Verification failed. Stripe needs additional information. Please try again with clear documents."
-                                );
-                            } else if (status === "canceled") {
-                                setError("Verification was canceled. Please try again.");
-                            } else {
-                                setSuccessMessage(`Verification status: ${status}. You can try again.`);
                             }
                         })
-                        .catch(() => setSuccessMessage(""));
-                } catch {
-                    // Corrupted data – ignore
-                }
-
+                        .catch(() => { });
+                } catch { }
                 localStorage.removeItem("dalpay_registration_data");
                 localStorage.removeItem("dalpay_stripe_session_id");
                 localStorage.removeItem("dalpay_current_step");
@@ -260,21 +325,50 @@ export default function RegisterPage() {
         }
     }, []);
 
+    // Save progress when step changes or files change
+    useEffect(() => {
+        if (step > 1 && stripeVerificationId) {
+            const dataToSave = {
+                formData,
+                identityDocument,
+                proofOfAddressDocument,
+                portraitPhoto,
+            };
+            localStorage.setItem("dalpay_registration_data", JSON.stringify(dataToSave));
+            localStorage.setItem("dalpay_stripe_session_id", stripeVerificationId);
+            localStorage.setItem("dalpay_current_step", step.toString());
+            localStorage.setItem("dalpay_completed_steps", JSON.stringify(completedSteps));
+        }
+    }, [step, formData, identityDocument, proofOfAddressDocument, portraitPhoto, stripeVerificationId, completedSteps]);
+
+    // Step validations (including document uploads)
     const validateStep = (stepNum: number): boolean => {
         switch (stepNum) {
             case 1:
                 if (!formData.nationalId || !formData.firstName || !formData.lastName) {
-                    setError("Please fill in all required fields.");
+                    setError("All personal info fields are required.");
+                    return false;
+                }
+                if (!validateNationalId(formData.nationalId)) {
+                    setError("National ID must be like SL-2026-999 (SL-YYYY-XXX)");
+                    return false;
+                }
+                if (!formData.dateOfBirth) {
+                    setError("Date of birth is required.");
+                    return false;
+                }
+                if (calculateAge(formData.dateOfBirth) < 18) {
+                    setError("You must be at least 18 years old.");
                     return false;
                 }
                 return true;
             case 2:
-                if (!formData.phoneNumber || !formData.password) {
-                    setError("Phone number and password are required.");
+                if (!formData.phoneNumber || !validatePhoneNumber(formData.phoneNumber)) {
+                    setError("Phone must be +2526XXXXXXXX (e.g., +252612345678)");
                     return false;
                 }
-                if (formData.password.length < 8) {
-                    setError("Password must be at least 8 characters.");
+                if (!formData.password || !validatePassword(formData.password)) {
+                    setError("Password: min 12 chars, uppercase, lowercase, symbol");
                     return false;
                 }
                 if (formData.password !== formData.confirmPassword) {
@@ -283,29 +377,45 @@ export default function RegisterPage() {
                 }
                 return true;
             case 3:
+                // Stripe verification must be completed
+                if (verificationStatus !== "verified") {
+                    setError("Please complete Stripe identity verification first.");
+                    return false;
+                }
+                // Document uploads required
+                if (!identityDocument) {
+                    setError("Please upload your Government ID (National ID/Passport).");
+                    return false;
+                }
+                if (!proofOfAddressDocument) {
+                    setError("Please upload a Proof of Address document.");
+                    return false;
+                }
+                if (!portraitPhoto) {
+                    setError("Please upload a portrait photo (selfie).");
+                    return false;
+                }
                 if (!formData.idNumber) {
-                    setError("Please enter your ID document number.");
+                    setError("ID document number is required.");
                     return false;
                 }
                 if (formData.idType === "driving_license" && !formData.drivingLicenseNumber) {
-                    setError("Please enter your driving license number.");
+                    setError("Driving license number is required.");
                     return false;
                 }
                 return true;
             case 4:
-                if (!formData.agreeToStripeVerification || !formData.agreeToTerms) {
-                    setError("Please agree to the verification process and terms.");
+                if (!formData.agreeToTerms) {
+                    setError("You must agree to the Terms of Service and Privacy Policy.");
                     return false;
                 }
                 if (formData.isUnder18 && (!formData.parentName || !formData.parentNationalId)) {
-                    setError("Parent/guardian information is required for applicants under 18.");
+                    setError("Parent/guardian information required for applicants under 18.");
                     return false;
                 }
                 return true;
-            case 5:
-                return true;
             default:
-                return false;
+                return true;
         }
     };
 
@@ -313,6 +423,7 @@ export default function RegisterPage() {
         if (validateStep(step)) {
             setCompletedSteps((prev) => [...prev, step]);
             setStep((prev) => Math.min(prev + 1, TOTAL_STEPS));
+            setError("");
         }
     };
 
@@ -322,18 +433,15 @@ export default function RegisterPage() {
         setSuccessMessage("");
     };
 
-    // ────────────────────────────────────────────────────────────
-    // Stripe Verification — Opens a NEW TAB (does NOT refresh page)
-    // ────────────────────────────────────────────────────────────
+    // Stripe verification – opens new tab
     const handleStripeVerification = async () => {
         setIsVerifying(true);
         setError("");
-        setSuccessMessage("");
+        setSuccessMessage("Opening Stripe verification...");
 
         const newTab = window.open("about:blank", "_blank");
-
         if (!newTab) {
-            setError("Pop-up blocked! Please allow pop-ups for this site to continue verification.");
+            setError("Pop-up blocked! Please allow pop-ups for this site.");
             setIsVerifying(false);
             return;
         }
@@ -344,97 +452,84 @@ export default function RegisterPage() {
                 firstName: formData.firstName,
                 lastName: formData.lastName,
             });
-
             const sessionData = response.data as VerificationSessionData;
-            const sessionId = sessionData.verificationId;
-            const verificationUrl = sessionData.verificationUrl;
-
-            setStripeVerificationId(sessionId);
-            setSuccessMessage(
-                "Verification page opened in a new tab. Complete all steps there — this page will update automatically."
-            );
-
-            newTab.location.href = verificationUrl;
-            startPolling(sessionId);
-        } catch (err: unknown) {
-            const message = (err as { message?: string })?.message || "Failed to create verification session. Please try again.";
-            setError(message);
-            setSuccessMessage("");
+            setStripeVerificationId(sessionData.verificationId);
+            newTab.location.href = sessionData.verificationUrl;
+            startPolling(sessionData.verificationId);
+            setSuccessMessage("Verification page opened. Complete all steps there — this page will update automatically.");
+        } catch (err: any) {
+            setError(err.message || "Failed to start verification.");
             setIsVerifying(false);
-            try {
-                newTab.close();
-            } catch {
-                /* ignore */
-            }
+            newTab.close();
         }
     };
 
-    // ────────────────────────────────────────────────────────────
-    // Submit registration
-    // ────────────────────────────────────────────────────────────
+    // Submit registration – creates pending account
     const handleSubmit = async () => {
         if (!validateStep(5)) return;
+        if (!recaptchaToken) {
+            setError("Please complete the reCAPTCHA verification.");
+            return;
+        }
+        if (verificationStatus !== "verified") {
+            setError("Stripe verification must be completed.");
+            return;
+        }
+
         setIsSubmitting(true);
         setError("");
         setSuccessMessage("");
 
         try {
-            const payload: RegisterPayload = {
-                nationalId: formData.nationalId,
-                firstName: formData.firstName,
-                lastName: formData.lastName,
-                email: formData.email || undefined,
-                phoneNumber: formData.phoneNumber,
-                password: formData.password,
-                dateOfBirth: formData.dateOfBirth || undefined,
-                gender: formData.gender || undefined,
-                occupation: formData.occupation || undefined,
-                region: formData.region || undefined,
-                district: formData.district || undefined,
-                address: formData.address || undefined,
-                parentName: formData.isUnder18 ? formData.parentName : undefined,
-                parentNationalId: formData.isUnder18 ? formData.parentNationalId : undefined,
-                parentPhone: formData.isUnder18 ? formData.parentPhone : undefined,
-                idType: formData.idType,
-                idNumber: formData.idNumber,
-                drivingLicenseNumber: formData.drivingLicenseNumber || undefined,
-                proofOfAddressType: formData.proofOfAddressType,
-                stripeVerificationId: stripeVerificationId || undefined,
-            };
+            const formDataToSend = new FormData();
+            const fields: (keyof typeof formData)[] = [
+                "nationalId", "firstName", "lastName", "email", "phoneNumber", "password",
+                "dateOfBirth", "gender", "occupation", "region", "district", "address",
+                "idType", "idNumber", "drivingLicenseNumber", "proofOfAddressType",
+                "parentName", "parentNationalId", "parentPhone"
+            ];
+            fields.forEach(field => {
+                const val = formData[field];
+                if (val) formDataToSend.append(field, val.toString());
+            });
+            formDataToSend.append("agreeToTerms", String(formData.agreeToTerms));
+            formDataToSend.append("isUnder18", String(formData.isUnder18));
+            if (identityDocument) formDataToSend.append("identityDocument", identityDocument.file);
+            if (proofOfAddressDocument) formDataToSend.append("proofOfAddressDocument", proofOfAddressDocument.file);
+            if (portraitPhoto) formDataToSend.append("portraitPhoto", portraitPhoto.file);
+            formDataToSend.append("stripeVerificationId", stripeVerificationId);
+            formDataToSend.append("recaptchaToken", recaptchaToken);
 
-            const response = await authApi.register(payload, turnstileToken);
-            const regData = response.data as RegistrationResponseData;
-            setError("");
-            setSuccessMessage(
-                response.message || "Account created successfully! Redirecting to your dashboard..."
-            );
+            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5173'}/api/v1/auth/register`, {
+                method: 'POST',
+                body: formDataToSend,
+                headers: { 'Accept': 'application/json' },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || "Registration failed");
+            }
+
+            const regData = await response.json() as RegistrationResponseData;
+            setSuccessMessage("Registration successful! Your account is pending admin approval. You will be notified when your tax profile is created.");
             setTokens(regData.accessToken, regData.refreshToken);
-
-            window.scrollTo({ top: 0, behavior: "smooth" });
-
-            setTimeout(() => {
-                navigate("/dashboard?welcome=true");
-            }, 2500);
-        } catch (err: unknown) {
-            const msg =
-                (err as { message?: string; data?: { message?: string } })?.message ||
-                (err as { message?: string; data?: { message?: string } })?.data?.message ||
-                "Registration failed. Please try again.";
-            setError(msg);
-            setSuccessMessage("");
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            setTimeout(() => navigate("/dashboard?pending=true"), 2500);
+        } catch (err: any) {
+            setError(err.message || "Registration failed.");
+            recaptchaRef.current?.reset();
+            setRecaptchaToken(null);
         } finally {
             setIsSubmitting(false);
         }
     };
 
     const districts = formData.region ? DISTRICTS[formData.region] || [] : [];
+    const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 
     return (
         <section className="min-h-screen bg-white dark:bg-[#0A0E1A] pt-28 pb-20 px-4">
             <div className="max-w-3xl mx-auto">
-                <TurnstileWidget onVerify={(token) => setTurnstileToken(token)} />
-                {/* Header */}
                 <div className="text-center mb-10">
                     <div className="w-16 h-16 mx-auto rounded-2xl bg-[#0F7B8C]/10 border border-[#0F7B8C]/20 flex items-center justify-center mb-4">
                         <ShieldCheck size={32} className="text-[#0F7B8C]" />
@@ -479,86 +574,73 @@ export default function RegisterPage() {
                     </div>
                 </div>
 
-                {/* Success banner */}
                 {successMessage && (
-                    <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3 text-sm text-green-600 dark:text-green-400 animate-fade-in">
+                    <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3 text-sm text-green-600 dark:text-green-400">
                         <CheckCircle size={18} className="shrink-0" />
                         <span>{successMessage}</span>
                     </div>
                 )}
-
-                {/* Error banner */}
                 {error && (
-                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3 text-sm text-red-600 dark:text-red-400 animate-fade-in">
+                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-3 text-sm text-red-600 dark:text-red-400">
                         <AlertCircle size={18} className="shrink-0" />
                         <span>{error}</span>
                     </div>
                 )}
 
-                {/* Form Card */}
                 <div className="bg-white dark:bg-[#111627] border border-gray-200 dark:border-gray-700 rounded-2xl p-6 md:p-8 shadow-xl">
-                    {/* ======================== STEP 1 ======================== */}
+                    {/* STEP 1 – Personal Info */}
                     {step === 1 && (
-                        <div className="space-y-5 animate-fade-in">
+                        <div className="space-y-5">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <User size={20} className="text-[#0F7B8C]" /> Personal Information
                             </h2>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    National ID *
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">National ID *</label>
                                 <input
                                     type="text"
                                     value={formData.nationalId}
                                     onChange={(e) => updateField("nationalId", e.target.value)}
-                                    placeholder="e.g. SL-2026-001"
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                    placeholder="SL-2026-001"
+                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20"
                                 />
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Format: SL-YYYY-XXX (e.g., SL-2026-001)</p>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                        First Name *
-                                    </label>
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">First Name *</label>
                                     <input
                                         type="text"
                                         value={formData.firstName}
                                         onChange={(e) => updateField("firstName", e.target.value)}
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                        Last Name *
-                                    </label>
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Last Name *</label>
                                     <input
                                         type="text"
                                         value={formData.lastName}
                                         onChange={(e) => updateField("lastName", e.target.value)}
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     />
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                        Date of Birth
-                                    </label>
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Date of Birth *</label>
                                     <input
                                         type="date"
                                         value={formData.dateOfBirth}
                                         onChange={(e) => updateField("dateOfBirth", e.target.value)}
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                        Gender
-                                    </label>
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Gender</label>
                                     <select
                                         value={formData.gender}
                                         onChange={(e) => updateField("gender", e.target.value)}
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     >
                                         <option value="">Select</option>
                                         <option value="male">Male</option>
@@ -568,13 +650,11 @@ export default function RegisterPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Occupation
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Occupation</label>
                                 <select
                                     value={formData.occupation}
                                     onChange={(e) => updateField("occupation", e.target.value)}
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                 >
                                     <option value="">Select</option>
                                     <option value="salaried">Salaried Employee</option>
@@ -589,82 +669,67 @@ export default function RegisterPage() {
                         </div>
                     )}
 
-                    {/* ======================== STEP 2 ======================== */}
+                    {/* STEP 2 – Contact & Address */}
                     {step === 2 && (
-                        <div className="space-y-5 animate-fade-in">
+                        <div className="space-y-5">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <MapPin size={20} className="text-[#0F7B8C]" /> Contact & Address
                             </h2>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Email
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Email</label>
                                 <div className="relative">
-                                    <Mail
-                                        size={18}
-                                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
-                                    />
+                                    <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                     <input
                                         type="email"
                                         value={formData.email}
                                         onChange={(e) => updateField("email", e.target.value)}
-                                        className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     />
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Phone Number *
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Phone Number *</label>
                                 <div className="relative">
-                                    <Phone
-                                        size={18}
-                                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
-                                    />
+                                    <Phone size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                     <input
                                         type="tel"
                                         value={formData.phoneNumber}
                                         onChange={(e) => updateField("phoneNumber", e.target.value)}
-                                        placeholder="+252 63 123 4567"
-                                        className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        placeholder="+252612345678"
+                                        className="w-full pl-11 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     />
                                 </div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Format: +2526 followed by 8-9 digits</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Password *
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Password *</label>
                                 <div className="relative">
-                                    <Lock
-                                        size={18}
-                                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
-                                    />
+                                    <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                     <input
                                         type={showPassword ? "text" : "password"}
                                         value={formData.password}
                                         onChange={(e) => updateField("password", e.target.value)}
-                                        className="w-full pl-11 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full pl-11 pr-12 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900"
                                     >
                                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                     </button>
                                 </div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Minimum 12 chars, uppercase, lowercase, symbol</p>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Confirm Password *
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Confirm Password *</label>
                                 <input
                                     type="password"
                                     value={formData.confirmPassword}
                                     onChange={(e) => updateField("confirmPassword", e.target.value)}
-                                    className={`w-full px-4 py-3 bg-white dark:bg-gray-800 border rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 transition-all ${formData.confirmPassword && formData.password !== formData.confirmPassword
+                                    className={`w-full px-4 py-3 bg-white dark:bg-gray-800 border rounded-xl ${formData.confirmPassword && formData.password !== formData.confirmPassword
                                         ? "border-red-500 focus:ring-red-500/20"
-                                        : "border-gray-200 dark:border-gray-700 focus:border-[#0F7B8C] focus:ring-[#0F7B8C]/20"
+                                        : "border-gray-200 dark:border-gray-700 focus:border-[#0F7B8C]"
                                         }`}
                                 />
                                 {formData.confirmPassword && formData.password !== formData.confirmPassword && (
@@ -673,289 +738,335 @@ export default function RegisterPage() {
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                        Region
-                                    </label>
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Region</label>
                                     <select
                                         value={formData.region}
                                         onChange={(e) => {
                                             updateField("region", e.target.value);
                                             updateField("district", "");
                                         }}
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl"
                                     >
                                         <option value="">Select region</option>
                                         {REGIONS.map((r) => (
-                                            <option key={r.value} value={r.value}>
-                                                {r.label}
-                                            </option>
+                                            <option key={r.value} value={r.value}>{r.label}</option>
                                         ))}
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                        District
-                                    </label>
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">District</label>
                                     <select
                                         value={formData.district}
                                         onChange={(e) => updateField("district", e.target.value)}
                                         disabled={!formData.region}
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all disabled:opacity-50"
+                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl disabled:opacity-50"
                                     >
                                         <option value="">Select district</option>
                                         {districts.map((d) => (
-                                            <option key={d} value={d.toLowerCase().replace(/\s+/g, "_")}>
-                                                {d}
-                                            </option>
+                                            <option key={d} value={d.toLowerCase().replace(/\s+/g, "_")}>{d}</option>
                                         ))}
                                     </select>
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Address
-                                </label>
+                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Address</label>
                                 <textarea
                                     value={formData.address}
                                     onChange={(e) => updateField("address", e.target.value)}
                                     placeholder="Enter your full street address..."
                                     rows={2}
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all resize-none"
+                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl resize-none"
                                 />
                             </div>
                         </div>
                     )}
 
-                    {/* ======================== STEP 3 — Stripe Identity ======================== */}
+                    {/* STEP 3 – Identity (Stripe + Document Uploads) */}
                     {step === 3 && (
-                        <div className="space-y-5 animate-fade-in">
+                        <div className="space-y-6">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <ShieldCheck size={20} className="text-[#0F7B8C]" /> Stripe Identity Verification
+                                <ShieldCheck size={20} className="text-[#0F7B8C]" /> Identity Verification & Documents
                             </h2>
                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                                DalPay uses Stripe Identity to securely verify your identity. A new tab will open
-                                for you to upload your documents and take a selfie.
+                                First, verify your identity with Stripe. Then upload the required documents.
                             </p>
 
-                            {/* Status Card — handles ALL Stripe states */}
-                            <div className="bg-gray-100/30 dark:bg-gray-800/30 border border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center">
-                                {verificationStatus === "verified" ? (
-                                    <>
-                                        <div className="w-14 h-14 mx-auto rounded-2xl bg-[#10B981]/10 border border-[#10B981]/20 flex items-center justify-center mb-3">
-                                            <CheckCircle size={28} className="text-[#10B981]" />
+                            {/* Stripe Identity Card */}
+                            <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-5">
+                                <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Stripe Identity Verification</h3>
+                                <div className="bg-gray-100/30 dark:bg-gray-800/30 rounded-lg p-4 text-center">
+                                    {verificationStatus === "verified" ? (
+                                        // Verified UI
+                                        <div>
+                                            <div className="w-12 h-12 mx-auto rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-2">
+                                                <CheckCircle size={24} className="text-green-600" />
+                                            </div>
+                                            <p className="text-green-600 dark:text-green-400 font-medium">Identity Verified</p>
+                                            <p className="text-xs text-gray-500">Your Stripe verification is complete.</p>
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                                            Identity Verified!
-                                        </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            Your identity has been successfully verified through Stripe. You can proceed.
-                                        </p>
-                                    </>
-                                ) : verificationStatus === "processing" ? (
-                                    <>
-                                        <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-3">
-                                            <Loader2 size={28} className="text-blue-500 animate-spin" />
+                                    ) : verificationStatus === "processing" ? (
+                                        // Processing UI
+                                        <div>
+                                            <div className="w-12 h-12 mx-auto rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-2">
+                                                <Loader2 size={24} className="text-blue-500 animate-spin" />
+                                            </div>
+                                            <p className="text-blue-600 dark:text-blue-400 font-medium">Processing...</p>
+                                            <p className="text-xs text-gray-500">Stripe is analyzing your documents.</p>
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                                            Analyzing Documents...
-                                        </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            Stripe is verifying your documents against official records. This usually takes
-                                            1-2 minutes.
-                                        </p>
-                                    </>
-                                ) : verificationStatus === "requires_input" ? (
-                                    <>
-                                        <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 flex items-center justify-center mb-3">
-                                            <AlertCircle size={28} className="text-amber-500" />
+                                    ) : verificationStatus === "requires_input" ? (
+                                        // Requires input
+                                        <div>
+                                            <div className="w-12 h-12 mx-auto rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-2">
+                                                <AlertCircle size={24} className="text-amber-500" />
+                                            </div>
+                                            <p className="text-amber-600 dark:text-amber-400 font-medium">Action Required</p>
+                                            <p className="text-xs text-gray-500 mb-2">Please complete the verification in the new tab.</p>
+                                            <button onClick={handleStripeVerification} className="text-sm text-[#0F7B8C] hover:underline">Reopen</button>
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                                            Waiting for Documents
-                                        </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            Please complete the verification form in the opened tab. Upload your ID and take
-                                            a selfie.
-                                        </p>
-                                        <button
-                                            onClick={handleStripeVerification}
-                                            disabled={isVerifying}
-                                            className="mt-3 text-sm text-[#0F7B8C] dark:text-[#3BA7BC] hover:text-[#0A5D6B] dark:hover:text-[#3BA7BC]/80 font-medium"
-                                        >
-                                            Reopen verification page
-                                        </button>
-                                    </>
-                                ) : verificationStatus === "requires_action" ? (
-                                    <>
-                                        <div className="w-14 h-14 mx-auto rounded-2xl bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 flex items-center justify-center mb-3">
-                                            <AlertCircle size={28} className="text-red-500" />
+                                    ) : verificationStatus === "requires_action" || verificationStatus === "canceled" || verificationStatus === "failed" || verificationStatus === "expired" ? (
+                                        // Failed/Error states
+                                        <div>
+                                            <div className="w-12 h-12 mx-auto rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-2">
+                                                <AlertCircle size={24} className="text-red-500" />
+                                            </div>
+                                            <p className="text-red-600 dark:text-red-400 font-medium">
+                                                {verificationStatus === "canceled" ? "Canceled" : verificationStatus === "expired" ? "Expired" : "Verification Failed"}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mb-2">{verificationError || "Please try again with clear documents."}</p>
+                                            <button onClick={handleStripeVerification} className="px-4 py-1 bg-[#0F7B8C] text-white rounded-lg text-sm">Retry</button>
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                                            Verification Failed
-                                        </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                            Stripe was unable to verify your identity. This could be due to unclear documents
-                                            or mismatched information. Please try again with clear photos.
-                                        </p>
-                                        <button
-                                            onClick={handleStripeVerification}
-                                            disabled={isVerifying}
-                                            className="inline-flex items-center gap-2 px-6 py-3 bg-[#0F7B8C] hover:bg-[#3BA7BC] text-white font-semibold rounded-xl transition-all disabled:opacity-50"
-                                        >
-                                            <ShieldCheck size={18} /> Try Again
-                                        </button>
-                                    </>
-                                ) : verificationStatus === "canceled" ? (
-                                    <>
-                                        <div className="w-14 h-14 mx-auto rounded-2xl bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800 flex items-center justify-center mb-3">
-                                            <AlertCircle size={28} className="text-red-500" />
+                                    ) : (
+                                        // Initial state
+                                        <div>
+                                            <button
+                                                onClick={handleStripeVerification}
+                                                disabled={isVerifying}
+                                                className="px-5 py-2 bg-[#0F7B8C] text-white rounded-lg disabled:opacity-50"
+                                            >
+                                                {isVerifying ? "Starting..." : "Start Stripe Verification"}
+                                            </button>
+                                            <p className="text-xs text-gray-500 mt-2">A new tab will open for you to upload your ID and take a selfie.</p>
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                                            Verification Canceled
-                                        </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                            The verification session was closed before completion. Please try again.
-                                        </p>
-                                        <button
-                                            onClick={handleStripeVerification}
-                                            disabled={isVerifying}
-                                            className="inline-flex items-center gap-2 px-6 py-3 bg-[#0F7B8C] hover:bg-[#3BA7BC] text-white font-semibold rounded-xl transition-all disabled:opacity-50"
-                                        >
-                                            <ShieldCheck size={18} /> Retry Verification
-                                        </button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="w-14 h-14 mx-auto rounded-2xl bg-[#0F7B8C]/10 border border-[#0F7B8C]/20 flex items-center justify-center mb-3">
-                                            <ShieldCheck size={28} className="text-[#0F7B8C]" />
-                                        </div>
-                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                                            Verify Your Identity
-                                        </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                            Click below to start verification. A new tab will open for Stripe's secure
-                                            verification page.
-                                        </p>
-                                        <button
-                                            onClick={handleStripeVerification}
-                                            disabled={isVerifying}
-                                            className="inline-flex items-center gap-2 px-6 py-3 bg-[#0F7B8C] hover:bg-[#3BA7BC] text-white font-semibold rounded-xl transition-all disabled:opacity-50"
-                                        >
-                                            {isVerifying ? (
-                                                <>
-                                                    <Loader2 size={18} className="animate-spin" /> Creating session...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <ShieldCheck size={18} /> Start Verification with Stripe
-                                                </>
+                                    )}
+                                    {/* Manual refresh button and status display */}
+                                    {stripeVerificationId && verificationStatus !== "verified" && (
+                                        <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                            <button onClick={refreshVerificationStatus} className="text-xs text-[#0F7B8C] hover:underline">
+                                                Refresh Status
+                                            </button>
+                                            {verificationStatus && verificationStatus !== "verified" && (
+                                                <p className="text-xs text-gray-500 mt-1">Current status: <span className="font-mono">{verificationStatus}</span></p>
                                             )}
-                                        </button>
-                                    </>
-                                )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    ID Document Type
-                                </label>
-                                <select
-                                    value={formData.idType}
-                                    onChange={(e) => updateField("idType", e.target.value)}
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
-                                >
-                                    {ID_TYPES.map((t) => (
-                                        <option key={t.value} value={t.value}>
-                                            {t.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                    Document Number *
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.idNumber}
-                                    onChange={(e) => updateField("idNumber", e.target.value)}
-                                    placeholder="Enter your ID/passport number"
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
-                                />
-                            </div>
-                            {formData.idType === "driving_license" && (
-                                <div>
+                            {/* Document Uploads */}
+                            <div className="space-y-4 mt-4">
+                                <h3 className="font-semibold text-gray-900 dark:text-white">Required Documents</h3>
+
+                                {/* Government ID */}
+                                <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
                                     <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                                        <Car size={16} className="text-[#0F7B8C]" /> Driving License Number *
+                                        <ShieldCheck size={16} className="text-[#0F7B8C]" /> 1. Government ID (National ID/Passport) *
                                     </label>
-                                    <input
-                                        type="text"
-                                        value={formData.drivingLicenseNumber}
-                                        onChange={(e) => updateField("drivingLicenseNumber", e.target.value)}
-                                        placeholder="Enter your driving license number"
-                                        className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
-                                    />
+                                    {!identityDocument ? (
+                                        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-[#0F7B8C] transition-colors">
+                                            <div className="space-y-1 text-center">
+                                                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                                                <div className="flex text-sm text-gray-600 dark:text-gray-400">
+                                                    <label className="relative cursor-pointer rounded-md font-medium text-[#0F7B8C] hover:text-[#3BA7BC]">
+                                                        <span>Upload a file</span>
+                                                        <input
+                                                            type="file"
+                                                            className="sr-only"
+                                                            accept="image/jpeg,image/png,image/jpg,application/pdf"
+                                                            onChange={(e) => handleFileUpload(e.target.files?.[0] || null, "identity")}
+                                                        />
+                                                    </label>
+                                                    <p className="pl-1">or drag and drop</p>
+                                                </div>
+                                                <p className="text-xs text-gray-500">PNG, JPG, PDF up to 5MB</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                {identityDocument.type.startsWith("image/") ? (
+                                                    <img src={identityDocument.preview} alt="preview" className="w-12 h-12 object-cover rounded" />
+                                                ) : (
+                                                    <File size={24} className="text-gray-500" />
+                                                )}
+                                                <div>
+                                                    <p className="text-sm font-medium">{identityDocument.name}</p>
+                                                    <p className="text-xs text-gray-500">{(identityDocument.size / 1024).toFixed(0)} KB</p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => removeFile("identity")} className="text-red-500 hover:text-red-700">
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+                                    )}
+                                    {uploadErrors.identity && <p className="text-xs text-red-500 mt-1">{uploadErrors.identity}</p>}
                                 </div>
-                            )}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                                    <Home size={16} className="text-[#0F7B8C]" /> Proof of Address Type
-                                </label>
-                                <select
-                                    value={formData.proofOfAddressType}
-                                    onChange={(e) => updateField("proofOfAddressType", e.target.value)}
-                                    className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
-                                >
-                                    {PROOF_OF_ADDRESS_TYPES.map((t) => (
-                                        <option key={t.value} value={t.value}>
-                                            {t.label}
-                                        </option>
-                                    ))}
-                                </select>
+
+                                {/* Proof of Address */}
+                                <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <Home size={16} className="text-[#0F7B8C]" /> 2. Proof of Address *
+                                    </label>
+                                    <div className="mb-3">
+                                        <select
+                                            value={formData.proofOfAddressType}
+                                            onChange={(e) => updateField("proofOfAddressType", e.target.value)}
+                                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm"
+                                        >
+                                            {PROOF_OF_ADDRESS_TYPES.map((t) => (
+                                                <option key={t.value} value={t.value}>{t.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    {!proofOfAddressDocument ? (
+                                        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-[#0F7B8C]">
+                                            <div className="space-y-1 text-center">
+                                                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                                                <div className="flex text-sm text-gray-600">
+                                                    <label className="relative cursor-pointer rounded-md font-medium text-[#0F7B8C]">
+                                                        <span>Upload a file</span>
+                                                        <input
+                                                            type="file"
+                                                            className="sr-only"
+                                                            accept="image/jpeg,image/png,image/jpg,application/pdf"
+                                                            onChange={(e) => handleFileUpload(e.target.files?.[0] || null, "proofOfAddress")}
+                                                        />
+                                                    </label>
+                                                    <p className="pl-1">or drag and drop</p>
+                                                </div>
+                                                <p className="text-xs text-gray-500">PNG, JPG, PDF up to 5MB</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                {proofOfAddressDocument.type.startsWith("image/") ? (
+                                                    <img src={proofOfAddressDocument.preview} alt="preview" className="w-12 h-12 object-cover rounded" />
+                                                ) : (
+                                                    <File size={24} className="text-gray-500" />
+                                                )}
+                                                <div>
+                                                    <p className="text-sm font-medium">{proofOfAddressDocument.name}</p>
+                                                    <p className="text-xs text-gray-500">{(proofOfAddressDocument.size / 1024).toFixed(0)} KB</p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => removeFile("proofOfAddress")} className="text-red-500">
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+                                    )}
+                                    {uploadErrors.proofOfAddress && <p className="text-xs text-red-500 mt-1">{uploadErrors.proofOfAddress}</p>}
+                                </div>
+
+                                {/* Portrait Photo */}
+                                <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+                                    <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                        <Image size={16} className="text-[#0F7B8C]" /> 3. Portrait Photo (Selfie) *
+                                    </label>
+                                    {!portraitPhoto ? (
+                                        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#0F7B8C]">
+                                            <div className="space-y-1 text-center">
+                                                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                                                <div className="flex text-sm text-gray-600">
+                                                    <label className="relative cursor-pointer rounded-md font-medium text-[#0F7B8C]">
+                                                        <span>Upload a photo</span>
+                                                        <input
+                                                            type="file"
+                                                            className="sr-only"
+                                                            accept="image/jpeg,image/png,image/jpg"
+                                                            onChange={(e) => handleFileUpload(e.target.files?.[0] || null, "portrait")}
+                                                        />
+                                                    </label>
+                                                    <p className="pl-1">or drag and drop</p>
+                                                </div>
+                                                <p className="text-xs text-gray-500">JPG or PNG, up to 5MB</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                <img src={portraitPhoto.preview} alt="portrait preview" className="w-12 h-12 object-cover rounded-full" />
+                                                <div>
+                                                    <p className="text-sm font-medium">{portraitPhoto.name}</p>
+                                                    <p className="text-xs text-gray-500">{(portraitPhoto.size / 1024).toFixed(0)} KB</p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => removeFile("portrait")} className="text-red-500">
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+                                    )}
+                                    {uploadErrors.portrait && <p className="text-xs text-red-500 mt-1">{uploadErrors.portrait}</p>}
+                                </div>
+
+                                {/* ID Document Details */}
+                                <div className="border-t border-gray-200 pt-4 mt-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">ID Document Type</label>
+                                        <select
+                                            value={formData.idType}
+                                            onChange={(e) => updateField("idType", e.target.value)}
+                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl"
+                                        >
+                                            {ID_TYPES.map((t) => (
+                                                <option key={t.value} value={t.value}>{t.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">Document Number *</label>
+                                        <input
+                                            type="text"
+                                            value={formData.idNumber}
+                                            onChange={(e) => updateField("idNumber", e.target.value)}
+                                            placeholder="Enter your ID/passport number"
+                                            className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl"
+                                        />
+                                    </div>
+                                    {formData.idType === "driving_license" && (
+                                        <div className="mt-4">
+                                            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                                                <Car size={16} className="text-[#0F7B8C]" /> Driving License Number *
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={formData.drivingLicenseNumber}
+                                                onChange={(e) => updateField("drivingLicenseNumber", e.target.value)}
+                                                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* ======================== STEP 4 ======================== */}
+                    {/* STEP 4 – Agreements & Parental */}
                     {step === 4 && (
-                        <div className="space-y-5 animate-fade-in">
+                        <div className="space-y-5">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <FileText size={20} className="text-[#0F7B8C]" /> Agreements & Parental Control
+                                <FileText size={20} className="text-[#0F7B8C]" /> Agreements & Parental Consent
                             </h2>
                             <div className="space-y-3">
                                 <label className="flex items-start gap-3 cursor-pointer">
                                     <input
                                         type="checkbox"
-                                        checked={formData.agreeToStripeVerification}
-                                        onChange={(e) => updateField("agreeToStripeVerification", e.target.checked)}
-                                        className="mt-1 w-4 h-4 rounded border-gray-200 dark:border-gray-700 text-[#0F7B8C] focus:ring-[#0F7B8C]"
-                                    />
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                                        I consent to identity verification through Stripe Identity.
-                                    </span>
-                                </label>
-                                <label className="flex items-start gap-3 cursor-pointer">
-                                    <input
-                                        type="checkbox"
                                         checked={formData.agreeToTerms}
                                         onChange={(e) => updateField("agreeToTerms", e.target.checked)}
-                                        className="mt-1 w-4 h-4 rounded border-gray-200 dark:border-gray-700 text-[#0F7B8C] focus:ring-[#0F7B8C]"
+                                        className="mt-1 w-4 h-4 rounded border-gray-200 text-[#0F7B8C] focus:ring-[#0F7B8C]"
                                     />
                                     <span className="text-sm text-gray-600 dark:text-gray-400">
-                                        I agree to the{" "}
-                                        <Link
-                                            to="/terms"
-                                            className="text-[#0F7B8C] dark:text-[#3BA7BC] hover:underline"
-                                        >
-                                            Terms of Service
-                                        </Link>{" "}
-                                        and{" "}
-                                        <Link
-                                            to="/privacy"
-                                            className="text-[#0F7B8C] dark:text-[#3BA7BC] hover:underline"
-                                        >
-                                            Privacy Policy
-                                        </Link>
-                                        .
+                                        I agree to the <Link to="/terms" className="text-[#0F7B8C] hover:underline">Terms of Service</Link> and{" "}
+                                        <Link to="/privacy" className="text-[#0F7B8C] hover:underline">Privacy Policy</Link>. *
                                     </span>
                                 </label>
                             </div>
@@ -965,48 +1076,38 @@ export default function RegisterPage() {
                                         type="checkbox"
                                         checked={formData.isUnder18}
                                         onChange={(e) => updateField("isUnder18", e.target.checked)}
-                                        className="mt-1 w-4 h-4 rounded border-gray-200 dark:border-gray-700 text-[#0F7B8C] focus:ring-[#0F7B8C]"
+                                        className="mt-1 w-4 h-4 rounded border-gray-200 text-[#0F7B8C]"
                                     />
-                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                        I am under 18 years old and need parental/guardian consent.
-                                    </span>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">I am under 18 years old and need parental/guardian consent.</span>
                                 </label>
                                 {formData.isUnder18 && (
                                     <div className="mt-4 space-y-4 pl-7 border-l-2 border-amber-400 ml-2">
-                                        <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                                            Parent/Guardian Information Required
-                                        </p>
+                                        <p className="text-sm text-amber-600 font-medium">Parent/Guardian Information Required</p>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                                Parent/Guardian Full Name *
-                                            </label>
+                                            <label className="block text-sm font-medium text-gray-900 mb-2">Parent/Guardian Full Name *</label>
                                             <input
                                                 type="text"
                                                 value={formData.parentName}
                                                 onChange={(e) => updateField("parentName", e.target.value)}
-                                                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                                Parent/Guardian National ID *
-                                            </label>
+                                            <label className="block text-sm font-medium text-gray-900 mb-2">Parent/Guardian National ID *</label>
                                             <input
                                                 type="text"
                                                 value={formData.parentNationalId}
                                                 onChange={(e) => updateField("parentNationalId", e.target.value)}
-                                                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                                                Parent/Guardian Phone
-                                            </label>
+                                            <label className="block text-sm font-medium text-gray-900 mb-2">Parent/Guardian Phone</label>
                                             <input
                                                 type="tel"
                                                 value={formData.parentPhone}
                                                 onChange={(e) => updateField("parentPhone", e.target.value)}
-                                                className="w-full px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:border-[#0F7B8C] focus:ring-2 focus:ring-[#0F7B8C]/20 transition-all"
+                                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl"
                                             />
                                         </div>
                                     </div>
@@ -1015,15 +1116,13 @@ export default function RegisterPage() {
                         </div>
                     )}
 
-                    {/* ======================== STEP 5 ======================== */}
+                    {/* STEP 5 – Review & Submit (with reCAPTCHA at the end) */}
                     {step === 5 && (
-                        <div className="space-y-5 animate-fade-in">
+                        <div className="space-y-5">
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <CheckCircle size={20} className="text-[#10B981]" /> Review & Submit
                             </h2>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                                Please review your information before submitting.
-                            </p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Review your information before submitting.</p>
                             <div className="space-y-3">
                                 {[
                                     {
@@ -1032,6 +1131,7 @@ export default function RegisterPage() {
                                             ["National ID", formData.nationalId],
                                             ["Name", `${formData.firstName} ${formData.lastName}`],
                                             ["DOB", formData.dateOfBirth || "—"],
+                                            ["Age", formData.dateOfBirth ? `${calculateAge(formData.dateOfBirth)} years` : "—"],
                                             ["Occupation", formData.occupation || "—"],
                                         ],
                                     },
@@ -1045,22 +1145,20 @@ export default function RegisterPage() {
                                         ],
                                     },
                                     {
-                                        label: "Identity",
+                                        label: "Identity & Documents",
                                         fields: [
+                                            ["Stripe Status", verificationStatus === "verified" ? "Verified" : "Not completed"],
                                             ["ID Type", formData.idType],
-                                            ["Document #", formData.idNumber],
-                                            ["Proof of Address", formData.proofOfAddressType],
-                                            ["Stripe Verification", verificationStatus || "Not completed"],
+                                            ["Document Number", formData.idNumber],
+                                            ["Proof of Address Type", formData.proofOfAddressType],
+                                            ["Gov ID Uploaded", identityDocument ? "Yes" : "No"],
+                                            ["Proof of Address Uploaded", proofOfAddressDocument ? "Yes" : "No"],
+                                            ["Portrait Uploaded", portraitPhoto ? "Yes" : "No"],
                                         ],
                                     },
                                 ].map((section, i) => (
-                                    <div
-                                        key={i}
-                                        className="bg-gray-100/30 dark:bg-gray-800/30 rounded-xl p-4"
-                                    >
-                                        <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm">
-                                            {section.label}
-                                        </h3>
+                                    <div key={i} className="bg-gray-100/30 dark:bg-gray-800/30 rounded-xl p-4">
+                                        <h3 className="font-semibold text-gray-900 dark:text-white mb-2 text-sm">{section.label}</h3>
                                         <div className="grid grid-cols-2 gap-1 text-sm">
                                             {section.fields.map(([l, v], j) => (
                                                 <div key={j} className="contents">
@@ -1072,21 +1170,31 @@ export default function RegisterPage() {
                                     </div>
                                 ))}
                             </div>
+
+                            {/* reCAPTCHA placed here as requested */}
+                            <div className="flex justify-center my-4">
+                                <ReCAPTCHA
+                                    ref={recaptchaRef}
+                                    sitekey={recaptchaSiteKey}
+                                    onChange={(token) => setRecaptchaToken(token)}
+                                    onExpired={() => setRecaptchaToken(null)}
+                                />
+                            </div>
+
                             <button
                                 onClick={handleSubmit}
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || !recaptchaToken || verificationStatus !== "verified"}
                                 className="w-full py-4 bg-[#0F7B8C] hover:bg-[#3BA7BC] text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                             >
                                 {isSubmitting ? (
-                                    <>
-                                        <Loader2 size={20} className="animate-spin" /> Creating your account...
-                                    </>
+                                    <><Loader2 size={20} className="animate-spin" /> Submitting...</>
                                 ) : (
-                                    <>
-                                        <ShieldCheck size={20} /> Create My Account
-                                    </>
+                                    <><ShieldCheck size={20} /> Create My Account</>
                                 )}
                             </button>
+                            <p className="text-xs text-center text-gray-500 dark:text-gray-400">
+                                After registration, your account will be pending admin approval. You will be notified when your tax profile is created.
+                            </p>
                         </div>
                     )}
 
@@ -1095,7 +1203,7 @@ export default function RegisterPage() {
                         {step > 1 ? (
                             <button
                                 onClick={handleBack}
-                                className="flex items-center gap-2 px-5 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-semibold rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                className="flex items-center gap-2 px-5 py-2.5 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white font-semibold rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800"
                             >
                                 <ArrowLeft size={16} /> Back
                             </button>
@@ -1105,7 +1213,7 @@ export default function RegisterPage() {
                         {step < TOTAL_STEPS ? (
                             <button
                                 onClick={handleNext}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-[#0F7B8C] hover:bg-[#3BA7BC] text-white font-semibold rounded-xl transition-all"
+                                className="flex items-center gap-2 px-6 py-2.5 bg-[#0F7B8C] hover:bg-[#3BA7BC] text-white font-semibold rounded-xl"
                             >
                                 Continue <ArrowRight size={16} />
                             </button>
@@ -1115,10 +1223,7 @@ export default function RegisterPage() {
 
                 <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
                     Already have an account?{" "}
-                    <Link
-                        to="/login"
-                        className="text-[#0F7B8C] dark:text-[#3BA7BC] hover:text-[#0A5D6B] dark:hover:text-[#3BA7BC]/80 font-semibold"
-                    >
+                    <Link to="/login" className="text-[#0F7B8C] dark:text-[#3BA7BC] hover:underline font-semibold">
                         Sign In
                     </Link>
                 </p>

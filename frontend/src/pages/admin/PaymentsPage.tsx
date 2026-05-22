@@ -78,7 +78,7 @@ function BarChart({ data, maxValue }: any) {
   );
 }
 
-export default async function PaymentsPage() {
+export default function PaymentsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"payments" | "providers">("payments");
   const [search, setSearch] = useState("");
@@ -90,7 +90,6 @@ export default async function PaymentsPage() {
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [newProvider, setNewProvider] = useState({ provider_id: "", provider_name: "" });
 
-  const res = await paymentApi.getAllPaymentsAdmin(page, limit);
   const { data: paymentsResp, isLoading, isError, error } = useQuery({
     queryKey: ["admin-all-payments", page],
     queryFn: () => paymentApi.getAllPaymentsAdmin(page, limit),
@@ -105,7 +104,7 @@ export default async function PaymentsPage() {
 
   const addProviderMutation = useMutation({
     mutationFn: (data: { provider_id: string; provider_name: string }) =>
-      (paymentApi as any).createProvider(data),
+      paymentApi.createProvider(data),
     onSuccess: () => {
       toast.success("Provider added");
       setShowAddProvider(false);
@@ -138,7 +137,7 @@ export default async function PaymentsPage() {
   }, [paymentsResp]);
 
   const providers = useMemo(() => {
-    const raw = res.data as Record<string, any>;
+    const raw = providersResp?.data as Record<string, any>;
     let list: any[] = [];
     if (Array.isArray(raw)) list = raw;
     else if (raw?.providers) list = raw.providers;
@@ -178,7 +177,6 @@ export default async function PaymentsPage() {
   // Pagination based on TOTAL, not current page length
   const totalPages = Math.ceil(totalPayments / limit);
 
-  // Export PDF (uses the currently loaded payments page, but it's okay for now)
   const handleExportPDF = () => {
     const w = window.open("", "_blank");
     if (!w) { toast.error("Please allow popups"); return; }
@@ -234,7 +232,6 @@ export default async function PaymentsPage() {
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: 0 }}>Payments</h1>
           <p style={{ fontSize: 13, color: C.faint, marginTop: 4 }}>
-            {/* Show real total from API */}
             {totalPayments} total • {confirmedCount} confirmed • {pendingCount + failedCount} pending/failed
           </p>
         </div>
@@ -251,7 +248,7 @@ export default async function PaymentsPage() {
 
       {activeTab === "payments" && (
         <>
-          {/* stats (calculated from the currently loaded page, but counts are still useful) */}
+          {/* stats */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
             <StatCard label="Total Volume" value={fmt(totalAmount)} icon={CreditCard} color={C.blue} sub={`${totalPayments} transactions`} />
             <StatCard label="Confirmed" value={fmt(confirmedAmount)} icon={CheckCircle} color={C.teal} sub={`${confirmedCount} payments`} />
@@ -314,7 +311,7 @@ export default async function PaymentsPage() {
               </>
             )}
           </div>
-          {/* Pagination – now using totalPayments from API */}
+          {/* Pagination */}
           {totalPages > 1 && (
             <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
               <button disabled={page === 1} onClick={() => setPage(page - 1)} style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.bg, color: C.text, cursor: "pointer", fontFamily: "inherit", fontSize: 11 }}>Prev</button>
