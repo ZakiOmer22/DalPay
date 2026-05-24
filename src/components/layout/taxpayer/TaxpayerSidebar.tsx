@@ -37,7 +37,7 @@ const NAV_SECTIONS = [
   {
     label: "Profile & Documents",
     items: [
-      { path: "/taxpayer/profile", label: "My Profile", icon: Users },
+      { path: "/profile", label: "My Profile", icon: Users },
       { path: "/taxpayer/documents", label: "Documents", icon: FileText },
     ],
   },
