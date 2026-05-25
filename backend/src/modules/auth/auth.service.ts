@@ -457,10 +457,24 @@ export class AuthService {
     const accessJti = uuidv4();
     const refreshJti = uuidv4();
 
-    const fingerprint = crypto
-      .createHash("sha256")
-      .update(`${ipAddress || ""}${userAgent || ""}`)
-      .digest("hex");
+    // Use a fixed fingerprint for Render (exclude IP)
+    // Render sets the environment variable RENDER=true
+    const isRender = process.env.RENDER === "true";
+    let fingerprint: string;
+    if (isRender) {
+      // Only use user agent + a salt (IP changes too often on Render)
+      const salt = process.env.FINGERPRINT_SALT || "dalpay-render-salt";
+      fingerprint = crypto
+        .createHash("sha256")
+        .update(`${userAgent || ""}${salt}`)
+        .digest("hex");
+    } else {
+      // Original fingerprint (IP + user agent) for local / non‑Render environments
+      fingerprint = crypto
+        .createHash("sha256")
+        .update(`${ipAddress || ""}${userAgent || ""}`)
+        .digest("hex");
+    }
 
     const accessToken = jwt.sign(
       {
