@@ -35,23 +35,36 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       }
     }
 
-    // Fingerprint check
+    // Fingerprint check (compatible with Render)
     if (decoded.fingerprint) {
-      const currentFingerprint = crypto
-        .createHash('sha256')
-        .update(`${req.ip}${req.headers['user-agent']}`)
-        .digest('hex');
+      const isRender = process.env.RENDER === 'true';
+      const salt = process.env.FINGERPRINT_SALT || 'dalpay-render-salt';
+      
+      let currentFingerprint: string;
+      if (isRender) {
+        // On Render, only use user agent + salt (IP changes often)
+        currentFingerprint = crypto
+          .createHash('sha256')
+          .update(`${req.headers['user-agent'] || ''}${salt}`)
+          .digest('hex');
+      } else {
+        // Original fingerprint (IP + user agent) for local / non‑Render
+        currentFingerprint = crypto
+          .createHash('sha256')
+          .update(`${req.ip}${req.headers['user-agent'] || ''}`)
+          .digest('hex');
+      }
+      
       if (currentFingerprint !== decoded.fingerprint) {
         throw new UnauthorizedError('Token used from different device');
       }
     }
 
-    // ======================== RLS setup (fixed) ========================
+    // ======================== RLS setup ========================
     const userId = decoded.userId;
     let role = decoded.role;
 
     if (!userId) {
-      // This shouldn't happen, but just in case
       return next(new UnauthorizedError('Malformed token: missing userId'));
     }
 
@@ -59,11 +72,9 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     try {
       await client.query('BEGIN');
 
-      // Direct interpolation because SET LOCAL does not accept parameters
       await client.query(`SET LOCAL app.user_id = '${safeSQL(userId)}'`);
 
       if (!role) {
-        // Look up role from DB if not present in token (should be present in new tokens)
         const res = await client.query('SELECT role FROM users WHERE id = $1', [userId]);
         if (res.rows.length > 0) {
           role = res.rows[0].role;
