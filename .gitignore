@@ -30,3 +30,6 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+# Shell and batch scripts (for local dev only)
+*.sh
+*.bat
