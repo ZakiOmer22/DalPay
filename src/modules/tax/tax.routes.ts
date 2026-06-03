@@ -20,6 +20,9 @@ router.get('/disputes', authenticate, taxController.getMyDisputes);
 router.get('/disputes/all', authenticate, authorize('admin', 'employee'), taxController.getAllDisputes);
 router.patch('/disputes/:disputeId', authenticate, authorize('admin', 'employee'), taxController.resolveDispute);
 
+router.get('/profile', authenticate, taxController.getTaxProfile);
+router.post('/profile', authenticate, taxController.createOrUpdateTaxProfile);
+
 router.get('/ledger', authenticate, authorize('admin', 'auditor', 'employee'), async (req, res, next) => {
   try {
     const { userId, limit, offset } = req.query;

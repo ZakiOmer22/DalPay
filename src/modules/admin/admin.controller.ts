@@ -1,13 +1,17 @@
-import { Request, Response, NextFunction } from 'express';
-import { successResponse } from '../../utils/response';
-import pool from '../../config/database';
-import { decrypt } from '../../utils/encryption';
-import logger from '../../utils/logger';   // optional but good for consistency
-import { AppError } from '@/utils/errors';
+import { Request, Response, NextFunction } from "express";
+import { successResponse } from "../../utils/response";
+import pool from "../../config/database";
+import { decrypt } from "../../utils/encryption";
+import logger from "../../utils/logger"; // optional but good for consistency
+import { AppError } from "@/utils/errors";
 
-export const getTaxpayers = async (req: Request, res: Response, next: NextFunction) => {
+export const getTaxpayers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
-    const { search = '', region = '', page = '1', limit = '20' } = req.query;
+    const { search = "", region = "", page = "1", limit = "20" } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
 
     // Base query – join users with taxpayer_profiles (role = taxpayer)
@@ -33,7 +37,10 @@ export const getTaxpayers = async (req: Request, res: Response, next: NextFuncti
     }
 
     // Count total
-    const countResult = await pool.query(`SELECT COUNT(*) FROM (${queryStr}) AS cnt`, params);
+    const countResult = await pool.query(
+      `SELECT COUNT(*) FROM (${queryStr}) AS cnt`,
+      params,
+    );
 
     queryStr += ` ORDER BY u.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(Number(limit), offset);
@@ -41,7 +48,7 @@ export const getTaxpayers = async (req: Request, res: Response, next: NextFuncti
     const { rows } = await pool.query(queryStr, params);
 
     // Decrypt sensitive fields
-    const taxpayers = rows.map(row => ({
+    const taxpayers = rows.map((row) => ({
       ...row,
       phone: decrypt(row.phone),
       email: decrypt(row.email),
@@ -59,13 +66,21 @@ export const getTaxpayers = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
-export const getTaxpayerDetail = async (req: Request, res: Response, next: NextFunction) => {
+export const getTaxpayerDetail = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const { userId } = req.params;
 
     // User
-    const userRes = await pool.query('SELECT * FROM users WHERE id = $1 AND role = $2', [userId, 'taxpayer']);
-    if (userRes.rows.length === 0) return next({ statusCode: 404, message: 'Taxpayer not found' });
+    const userRes = await pool.query(
+      "SELECT * FROM users WHERE id = $1 AND role = $2",
+      [userId, "taxpayer"],
+    );
+    if (userRes.rows.length === 0)
+      return next({ statusCode: 404, message: "Taxpayer not found" });
 
     const userRow = userRes.rows[0];
     const user = {
@@ -76,11 +91,15 @@ export const getTaxpayerDetail = async (req: Request, res: Response, next: NextF
     };
 
     // Profile
-    const profileRes = await pool.query('SELECT * FROM taxpayer_profiles WHERE user_id = $1', [userId]);
+    const profileRes = await pool.query(
+      "SELECT * FROM taxpayer_profiles WHERE user_id = $1",
+      [userId],
+    );
     const profile = profileRes.rows[0] || null;
 
     // Tax summary
-    const summaryRes = await pool.query(`
+    const summaryRes = await pool.query(
+      `
       SELECT
         COALESCE(SUM(CASE WHEN status IN ('unpaid','partially_paid','overdue') THEN amount ELSE 0 END), 0) AS total_due,
         COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS total_paid,
@@ -88,24 +107,44 @@ export const getTaxpayerDetail = async (req: Request, res: Response, next: NextF
         COUNT(CASE WHEN status = 'overdue' THEN 1 END) AS overdue,
         COUNT(CASE WHEN status = 'paid' THEN 1 END) AS paid
       FROM tax_assessments WHERE user_id = $1
-    `, [userId]);
+    `,
+      [userId],
+    );
 
-    const taxSummary = summaryRes.rows[0] || { total_due:0, total_paid:0, pending:0, overdue:0, paid:0 };
+    const taxSummary = summaryRes.rows[0] || {
+      total_due: 0,
+      total_paid: 0,
+      pending: 0,
+      overdue: 0,
+      paid: 0,
+    };
 
     // Assessments
-    const assessmentsRes = await pool.query('SELECT * FROM tax_assessments WHERE user_id = $1 ORDER BY year DESC', [userId]);
+    const assessmentsRes = await pool.query(
+      "SELECT * FROM tax_assessments WHERE user_id = $1 ORDER BY year DESC",
+      [userId],
+    );
     const assessments = assessmentsRes.rows;
 
     // Payments
-    const paymentsRes = await pool.query('SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10', [userId]);
+    const paymentsRes = await pool.query(
+      "SELECT * FROM payments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10",
+      [userId],
+    );
     const payments = paymentsRes.rows;
 
     // Documents
-    const documentsRes = await pool.query('SELECT * FROM documents WHERE user_id = $1', [userId]);
+    const documentsRes = await pool.query(
+      "SELECT * FROM documents WHERE user_id = $1",
+      [userId],
+    );
     const documents = documentsRes.rows;
 
     // Disputes
-    const disputesRes = await pool.query('SELECT * FROM tax_disputes WHERE user_id = $1', [userId]);
+    const disputesRes = await pool.query(
+      "SELECT * FROM tax_disputes WHERE user_id = $1",
+      [userId],
+    );
     const disputes = disputesRes.rows;
 
     return successResponse(res, {
@@ -122,7 +161,11 @@ export const getTaxpayerDetail = async (req: Request, res: Response, next: NextF
   }
 };
 
-export const getUserRegistrationDetails = async (req: Request, res: Response, next: NextFunction) => {
+export const getUserRegistrationDetails = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const { userId } = req.params;
     // Fetch user with plain fields
@@ -133,7 +176,7 @@ export const getUserRegistrationDetails = async (req: Request, res: Response, ne
               stripe_verification_id, created_at, approval_status
        FROM users
        WHERE id = $1`,
-      [userId]
+      [userId],
     );
     if (userRes.rows.length === 0) throw new AppError("User not found", 404);
     const user = userRes.rows[0];
@@ -143,7 +186,7 @@ export const getUserRegistrationDetails = async (req: Request, res: Response, ne
       `SELECT document_type, file_url, uploaded_at
        FROM user_documents
        WHERE user_id = $1`,
-      [userId]
+      [userId],
     );
 
     return successResponse(res, { user, documents: docsRes.rows });
@@ -152,7 +195,11 @@ export const getUserRegistrationDetails = async (req: Request, res: Response, ne
   }
 };
 
-export const getSessions = async (req: Request, res: Response, next: NextFunction) => {
+export const getSessions = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const query = `
       SELECT
@@ -173,7 +220,7 @@ export const getSessions = async (req: Request, res: Response, next: NextFunctio
 
     const result = await pool.query(query);
 
-    const sessions = result.rows.map(row => ({
+    const sessions = result.rows.map((row) => ({
       ...row,
       email: decrypt(row.email) || row.email,
     }));
@@ -185,82 +232,204 @@ export const getSessions = async (req: Request, res: Response, next: NextFunctio
 };
 
 // Add revoke session function
-export const revokeSession = async (req: Request, res: Response, next: NextFunction) => {
+export const revokeSession = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const { id } = req.params;
 
     const result = await pool.query(
       `UPDATE user_sessions SET is_revoked = true WHERE id = $1 RETURNING *`,
-      [id]
+      [id],
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ success: false, message: 'Session not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Session not found" });
     }
 
-    logger.info('Session revoked by admin', { sessionId: id });
-    return successResponse(res, { id }, 'Session revoked successfully');
+    logger.info("Session revoked by admin", { sessionId: id });
+    return successResponse(res, { id }, "Session revoked successfully");
   } catch (error) {
     next(error);
   }
 };
 
-export const getPendingUsers = async (req: Request, res: Response, next: NextFunction) => {
+export const getPendingVerifications = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
     const result = await pool.query(
-      `SELECT id, full_name, email, phone, national_id, created_at, approval_status
-       FROM users
-       WHERE approval_status = 'pending'
-       ORDER BY created_at ASC`
+      `SELECT v.id, v.user_id, v.type, v.data, v.created_at, u.full_name, u.email, u.phone
+       FROM verification v
+       JOIN users u ON v.user_id = u.id
+       WHERE v.status = 'pending'
+       ORDER BY v.created_at ASC`,
     );
-    // Decode sensitive fields? Not necessary for admin review – just show identifiers
-    const users = result.rows.map(u => ({
-      id: u.id,
-      fullName: u.full_name,
-      email: u.email,
-      phone: u.phone,
-      nationalId: u.national_id,
-      createdAt: u.created_at,
-      approvalStatus: u.approval_status,
+    const verifications = result.rows.map((v) => ({
+      id: v.id,
+      user_id: v.user_id,
+      type: v.type,
+      data: v.data,
+      created_at: v.created_at,
+      full_name: v.full_name,
+      email: decrypt(v.email),
+      phone: decrypt(v.phone),
     }));
-    return successResponse(res, users);
+    return successResponse(res, verifications);
   } catch (error) {
     next(error);
   }
 };
 
-export const approveUser = async (req: Request, res: Response, next: NextFunction) => {
+export const approveVerification = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   try {
-    const { userId } = req.params;
-    const result = await pool.query(
-      `UPDATE users SET approval_status = 'approved', updated_at = NOW()
-       WHERE id = $1 AND approval_status = 'pending'
-       RETURNING id, full_name, approval_status`,
-      [userId]
+    const { verificationId } = req.params;
+    const { notes } = req.body;
+    const adminId = (req as any).user.userId;
+
+    await pool.query("BEGIN");
+
+    // 1. Get the verification record
+    const verifResult = await pool.query(
+      `SELECT user_id, type, data FROM verification
+       WHERE id = $1 AND status = 'pending'
+       FOR UPDATE`,
+      [verificationId],
     );
-    if (result.rows.length === 0) {
-      throw new AppError('User not found or already processed', 404);
+    if (verifResult.rows.length === 0) {
+      throw new AppError("Verification not found or already processed", 404);
     }
-    // Optionally: send email notification to user
-    return successResponse(res, result.rows[0], 'User approved successfully');
+    const { user_id, type, data } = verifResult.rows[0];
+
+    // 2. Mark verification as approved
+    await pool.query(
+      `UPDATE verification
+       SET status = 'approved', admin_notes = $1, verified_by = $2, verified_at = NOW()
+       WHERE id = $3`,
+      [notes, adminId, verificationId],
+    );
+
+    // 3. Handle tax_profile verification – ensure profile exists and set verified = true
+    if (type === "tax_profile") {
+      // Check if a taxpayer_profiles row exists
+      const existing = await pool.query(
+        `SELECT id FROM taxpayer_profiles WHERE user_id = $1`,
+        [user_id],
+      );
+
+      if (existing.rows.length === 0) {
+        // Create profile from the data submitted in verification
+        await pool.query(
+          `INSERT INTO taxpayer_profiles
+            (user_id, occupation, monthly_income, region, district, business_name, business_type, property_value, verified, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())`,
+          [
+            user_id,
+            data.occupation,
+            data.monthly_income,
+            data.region,
+            data.district,
+            data.business_name || null,
+            data.business_type || null,
+            data.property_value || 0,
+          ],
+        );
+      } else {
+        // Update existing profile to verified
+        await pool.query(
+          `UPDATE taxpayer_profiles
+           SET verified = true, updated_at = NOW()
+           WHERE user_id = $1`,
+          [user_id],
+        );
+      }
+      const currentYear = new Date().getFullYear();
+      await generateAssessmentsForUser(user_id, currentYear);
+    }
+
+    await pool.query("COMMIT");
+    return successResponse(
+      res,
+      null,
+      "Profile verified and assessments generated",
+    );
   } catch (error) {
+    await pool.query("ROLLBACK").catch(() => {});
     next(error);
   }
 };
 
-export const rejectUser = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { userId } = req.params;
-    const result = await pool.query(
-      `UPDATE users SET approval_status = 'rejected', updated_at = NOW()
-       WHERE id = $1 AND approval_status = 'pending'
-       RETURNING id, full_name, approval_status`,
-      [userId]
+async function generateAssessmentsForUser(userId: string, year: number) {
+  // Get the taxpayer profile
+  const profile = await pool.query(
+    `SELECT monthly_income, business_type, property_value FROM taxpayer_profiles WHERE user_id = $1`,
+    [userId],
+  );
+  if (profile.rows.length === 0) return;
+
+  const { monthly_income, business_type, property_value } = profile.rows[0];
+
+  // Simple rule-based assessment (customise as needed)
+  let incomeTax = 0;
+  if (monthly_income) {
+    // Example: 10% income tax
+    incomeTax = monthly_income * 12 * 0.1;
+  }
+
+  let propertyTax = 0;
+  if (property_value) {
+    // Example: 1% property tax
+    propertyTax = property_value * 0.01;
+  }
+
+  // Insert assessments
+  if (incomeTax > 0) {
+    await pool.query(
+      `INSERT INTO tax_assessments (user_id, tax_type, amount, year, due_date, status, auto_generated)
+       VALUES ($1, 'income_tax', $2, $3, $4, 'unpaid', true)`,
+      [userId, incomeTax, year, new Date(year, 11, 31)],
     );
-    if (result.rows.length === 0) {
-      throw new AppError('User not found or already processed', 404);
-    }
-    return successResponse(res, result.rows[0], 'User rejected');
+  }
+  if (propertyTax > 0) {
+    await pool.query(
+      `INSERT INTO tax_assessments (user_id, tax_type, amount, year, due_date, status, auto_generated)
+       VALUES ($1, 'property_tax', $2, $3, $4, 'unpaid', true)`,
+      [userId, propertyTax, year, new Date(year, 11, 31)],
+    );
+  }
+}
+
+export const rejectVerification = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { verificationId } = req.params;
+    const { notes } = req.body;
+    const adminId = (req as any).user.userId;
+
+    const result = await pool.query(
+      `UPDATE verification
+       SET status = 'rejected', admin_notes = $1, verified_by = $2, verified_at = NOW()
+       WHERE id = $3 AND status = 'pending'
+       RETURNING id`,
+      [notes, adminId, verificationId],
+    );
+    if (result.rows.length === 0)
+      throw new AppError("Verification not found or already processed", 404);
+
+    return successResponse(res, null, "Verification rejected");
   } catch (error) {
     next(error);
   }
