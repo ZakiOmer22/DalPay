@@ -240,7 +240,7 @@ function AssessmentDetailModal({
           </div>
           <div>
             <p style={{ fontSize: 10, color: C.faint, marginBottom: 4 }}>Amount</p>
-            <p style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>SOS {Number(assessment.amount).toLocaleString()}</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>USD {Number(assessment.amount).toLocaleString()}</p>
           </div>
           <div>
             <p style={{ fontSize: 10, color: C.faint, marginBottom: 4 }}>Status</p>
@@ -296,7 +296,7 @@ function PaymentDetailModal({
           </div>
           <div>
             <p style={{ fontSize: 10, color: C.faint, marginBottom: 4 }}>Amount</p>
-            <p style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>SOS {Number(payment.amount).toLocaleString()}</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: C.teal }}>USD {Number(payment.amount).toLocaleString()}</p>
           </div>
           <div>
             <p style={{ fontSize: 10, color: C.faint, marginBottom: 4 }}>Status</p>
@@ -409,7 +409,7 @@ export default function TaxpayerDetailPage() {
   const documents = detail.documents;
   const disputes = detail.disputes;
 
-  const formatCurrency = (val: number) => `SOS ${val.toLocaleString()}`;
+  const formatCurrency = (val: number) => `USD ${val.toLocaleString()}`;
 
   const handleViewAssessment = (a: Record<string, unknown>) => {
     setSelectedAssessment(a);

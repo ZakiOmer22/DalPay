@@ -12,10 +12,9 @@ router.get('/taxpayers/:userId', authenticate, authorize('admin', 'super_admin',
 router.get('/sessions', authenticate, authorize('admin', 'super_admin', 'employee'), adminController.getSessions);
 router.post('/sessions/:id/revoke', authenticate, authorize('admin', 'super_admin'), adminController.revokeSession);
 
-router.get('/users/pending', authenticate, authorize('admin', 'super_admin'), adminController.getPendingUsers);
-router.put('/users/:userId/approve', authenticate, authorize('admin', 'super_admin'), adminController.approveUser);
-router.put('/users/:userId/reject', authenticate, authorize('admin', 'super_admin'), adminController.rejectUser);
-router.get('/users/:userId/details', authenticate, authorize('admin', 'super_admin'), adminController.getUserRegistrationDetails);
+router.get('/verifications/pending', authenticate, authorize('admin', 'super_admin'), adminController.getPendingVerifications);
+router.post('/verifications/:verificationId/approve', authenticate, authorize('admin', 'super_admin'), adminController.approveVerification);
+router.post('/verifications/:verificationId/reject', authenticate, authorize('admin', 'super_admin'), adminController.rejectVerification);
 
 // Admin/Employee view all assessments
 router.get('/assessments', authenticate, authorize('admin', 'super_admin', 'employee'), async (req, res, next) => {

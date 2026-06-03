@@ -56,7 +56,6 @@ import MySessionsPage from "./pages/admin/MySessionsPage";
 import { useSessionValidator } from "./hooks/useSessionValidator";
 import EmployeeDashboardLayout from "./components/layout/Employee/EmployeeDashboardLayout";
 import EmployeeDashboardPage from "./pages/employee/EmployeeDashboardPage";
-import EmployeeVisitorsPage from "./pages/employee/EmployeeVisitorsPage";
 import TaxPayerPayTaxPage from "./pages/taxpayer/PayTaxPage";
 import TaxPayerPaymentHistoryPage from "./pages/taxpayer/PaymentHistoryPage";
 import TaxPayerCheckBalancePage from "./pages/taxpayer/CheckBalancePage";
@@ -68,6 +67,8 @@ import TaxPayerNotificationsPage from "./pages/taxpayer/NotificationsPage";
 import TaxPayerSettingsPage from "./pages/taxpayer/SettingsPage";
 import VerifyAccountPage from "./pages/VerifyAccountPage";
 import ApproveUsers from "./pages/admin/ApproveUsers";
+import EmployeeCounterPaymentPage from "./pages/employee/EmployeeCounterPaymentPage";
+import CompleteTaxProfilePage from "./pages/CompleteTaxProfilePage";
 
 function App() {
   // Set dark class immediately from localStorage/system preference
@@ -117,7 +118,8 @@ function App() {
             <Route path="/careers" element={<CareersPage />} />
             <Route path="/careers/:slug" element={<CareerDetailPage />} />
             <Route path="/verify" element={<VerifyAccountPage />} />
-
+            <Route path="/complete-profile" element={<CompleteTaxProfilePage />} />
+            
             {/* auth Routes */}
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/login" element={<LoginPage />} />
@@ -149,8 +151,7 @@ function App() {
           {/* employee */}
           <Route path="/employee" element={<EmployeeDashboardLayout />}>
             <Route path="dashboard" element={<EmployeeDashboardPage />} />
-            <Route path="visitors" element={<EmployeeVisitorsPage />} />
-            <Route path="my-sessions" element={<MySessionsPage />} />
+            <Route path="counter-payment" element={<EmployeeCounterPaymentPage />} />
           </Route>
           {/* taxpayer */}
           <Route path="/taxpayer" element={<TaxpayerDashboardLayout />}>
