@@ -2,7 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import { CircleDollarSign } from "lucide-react";
-import { getAccessToken } from "@/services/api";
+import { getAccessToken, request } from "@/services/api";
 
 const messages = [
   "Preparing your dashboard…",
@@ -65,21 +65,41 @@ export default function DashboardPage() {
       return;
     }
 
+    // Rotate loading messages every 2 seconds
     let index = 0;
     const msgInterval = setInterval(() => {
       index = (index + 1) % messages.length;
       setMessage(messages[index]);
     }, 2000);
 
+    // For taxpayers, we need to check if they have a tax profile
+    if (role === "taxpayer") {
+      // Fetch profile asynchronously
+      request<{ profile: any | null }>("/tax/profile")
+        .then((res) => {
+          clearInterval(msgInterval);
+          if (res.data?.profile) {
+            navigate("/taxpayer/dashboard", { replace: true });
+          } else {
+            navigate("/complete-profile", { replace: true });
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to fetch profile", err);
+          clearInterval(msgInterval);
+          // If profile check fails, still redirect to dashboard (might be a network issue)
+          navigate("/taxpayer/dashboard", { replace: true });
+        });
+      return;
+    }
+
+    // For non‑taxpayer roles, redirect after a short delay (no extra API call)
     const redirectTimer = setTimeout(() => {
       clearInterval(msgInterval);
       switch (role) {
         case "super_admin":
         case "admin":
           navigate("/admin/dashboard", { replace: true });
-          break;
-        case "taxpayer":
-          navigate("/taxpayer/dashboard", { replace: true });
           break;
         case "employee":
           navigate("/employee/dashboard", { replace: true });
@@ -93,14 +113,16 @@ export default function DashboardPage() {
       }
     }, 2500);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReady(true);
-
     return () => {
       clearTimeout(redirectTimer);
       clearInterval(msgInterval);
     };
   }, [navigate]);
+
+  // Set ready flag to avoid flickering (not strictly necessary, but keeps the pattern)
+  useEffect(() => {
+    setReady(true);
+  }, []);
 
   if (!ready) return null;
 

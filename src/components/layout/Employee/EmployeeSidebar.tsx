@@ -1,35 +1,57 @@
 // src/components/layout/Employee/EmployeeSidebar.tsx
+import React from "react";
 import { NavLink } from "react-router-dom";
 import {
-  LayoutDashboard, FileText, User,
-  Shield, ChevronLeft, ArrowBigLeft, X,
-  Users,
-  CreditCard, Clock,
+  LayoutDashboard,
+  X,
+  Banknote,
+  AlertTriangle,
+  ArrowLeft,
+  FileSearch,
+  Headphones,
+  ShieldCheck,
+  UserCircle,
+  History, // 🚀 FIX: Explicitly import History icon from lucide-react
 } from "lucide-react";
 
-const APP_NAME = "DalPay Tax Assistant";
+const APP_NAME = "DalPay";
 
-const NAV_SECTIONS = [
+// 🚀 FIX: Add explicit interface types so TypeScript accepts optional 'end' properties across array items
+interface NavItem {
+  path: string;
+  label: string;
+  icon: React.ComponentType<any>;
+  end?: boolean;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
   {
-    label: "Main",
+    label: "Core Operations",
     items: [
-      { path: "/employee/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
-      { path: "/employee/visitors", label: "Visitors", icon: Users },
-      { path: "/employee/tax-assistance", label: "Tax Assistance", icon: FileText },
-      { path: "/employee/payments", label: "Process Payment", icon: CreditCard },
+      { path: "/employee/dashboard", label: "Operations Dashboard", icon: LayoutDashboard, end: true },
+      { path: "/employee/counter-payment", label: "Walk-in Desk (POS)", icon: Banknote },
+      { path: "/employee/risk-validation", label: "Risk & Validation", icon: AlertTriangle },
+      { path: "/employee/eaudits", label: "Digital Audits", icon: FileSearch },
+      { path: "/employee/exceptions", label: "Exception Handling", icon: ShieldCheck },
     ],
   },
   {
-    label: "Support",
+    label: "Taxpayer Services",
     items: [
-      { path: "/employee/my-sessions", label: "Session History", icon: Shield },
-      { path: "/profile", label: "My Profile", icon: User },
+      { path: "/employee/assistance-queue", label: "Support Desk", icon: Headphones },
+      { path: "/employee/session-history", label: "Interaction History", icon: History },
     ],
   },
   {
-    label: "Navigation",
+    label: "Account",
     items: [
-      { path: "/", label: "Back to Website", icon: ArrowBigLeft },
+      { path: "/profile", label: "Officer Profile", icon: UserCircle },
+      { path: "/", label: "Public Website", icon: ArrowLeft },
     ],
   },
 ];
@@ -54,11 +76,9 @@ export default function EmployeeSidebar({
   const sectionLabel = "rgba(255,255,255,0.2)";
   const divider = "rgba(255,255,255,0.05)";
   const logoBg = "rgba(34, 197, 94, 0.25)";
-  const footerText = "rgba(255,255,255,0.18)";
   const toggleColor = "rgba(255,255,255,0.25)";
   const toggleHoverBg = "rgba(255,255,255,0.07)";
   const toggleHoverColor = "rgba(255,255,255,0.65)";
-  const badgeText = "#3BA7BC";
 
   const sidebarStyle: React.CSSProperties = {
     width: sidebarOpen ? 256 : 68,
@@ -251,29 +271,8 @@ export default function EmployeeSidebar({
         ))}
       </nav>
 
-      {/* Footer */}
+      {/* Footer Toggle Button */}
       <div style={{ borderTop: `1px solid ${border}`, padding: "8px 8px 10px", flexShrink: 0 }}>
-        {sidebarOpen && (
-          <>
-            <p style={{ textAlign: "center", fontSize: 12, color: footerText, marginBottom: 6, letterSpacing: "0.03em" }}>
-              DalPay Assistant
-            </p>
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "6px 8px",
-              background: "rgba(59, 167, 188, 0.05)",
-              borderRadius: 6,
-              marginBottom: 6,
-              fontSize: 10,
-              color: badgeText,
-            }}>
-              <Clock size={12} />
-              <span>Last sync: now</span>
-            </div>
-          </>
-        )}
         <button
           onClick={toggleSidebar}
           title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
@@ -302,15 +301,7 @@ export default function EmployeeSidebar({
             e.currentTarget.style.color = toggleColor;
           }}
         >
-          <ChevronLeft
-            size={13}
-            style={{
-              transform: sidebarOpen ? "rotate(0deg)" : "rotate(180deg)",
-              transition: "transform 0.25s cubic-bezier(.4,0,.2,1)",
-              flexShrink: 0,
-            }}
-          />
-          {sidebarOpen && <span>Collapse</span>}
+          {sidebarOpen ? "Collapse" : "»"}
         </button>
       </div>
     </aside>
